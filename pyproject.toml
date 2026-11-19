@@ -1,0 +1,45 @@
+[project]
+name = "freshdags"
+version = "0.1.0"
+description = "Track dependencies between docs and the code they describe, and flag documentation drift."
+readme = "Readme.md"
+authors = [
+    { name = "Markus Kobold", email = "mkcode92@gmail.com" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "typer>=0.29.2",
+]
+keywords = ["documentation", "drift", "dag", "git", "cli", "agents"]
+classifiers = [
+    "Development Status :: 2 - Pre-Alpha",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Documentation",
+]
+
+[project.scripts]
+freshdags = "freshdags.cli:app"
+
+[build-system]
+requires = ["uv_build>=0.12.23,<0.13.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.2.0",
+    "ruff>=0.17.5",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "SIM"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["tests"]
