@@ -3,6 +3,8 @@ name = "freshdags"
 version = "0.1.0"
 description = "Track dependencies between docs and the code they describe, and flag documentation drift."
 readme = "Readme.md"
+license = "MIT"
+license-files = ["LICENSE"]
 authors = [
     { name = "Markus Kobold", email = "mkcode92@gmail.com" }
 ]

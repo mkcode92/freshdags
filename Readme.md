@@ -1,33 +1,97 @@
 # freshdags 🦡✨
 
-A small CLI that helps prevent documentation drift — especially in codebases where agents change code faster than anyone re-reads the docs.
+A small CLI that helps prevent documentation drift — especially in codebases where agents change code faster than anyone re-reads the docs. It works just as well for keeping any file consistent with the specs and invariants it depends on.
 
 > **Status:** design and tests are in place; the commands are not implemented yet. Everything below describes the intended behaviour.
 
-## How it works
+## Install
 
-You record which docs depend on which sources. freshdags keeps these dependencies as a graph (a DAG) in `freshdags.json` at the repository root.
+Not on PyPI yet. Install from GitHub:
 
-The rule is simple: **a doc must be at least as new as each of its sources.** If a source changed after a doc was last brought up to date, the doc is flagged as a drift risk until someone resolves it.
+```sh
+uv tool install git+https://github.com/mkcode92/freshdags
+```
 
-Times come from git: a file's change time is the **author date** of the last commit that touched it. Author dates survive rebases, so rewriting a branch does not raise false flags. Because commits are the source of truth, a doc can be updated in a later commit of the same pull request.
+## Quick start
 
-- **Nodes** are file paths relative to the repository root, or external nodes written as `ext:<name>` (a wiki page, a third-party API) that have no file.
-- **Edges** mean "doc depends on source". A doc can itself be a source for other docs.
-- **Changes ripple, resolves do not.** A real change to a doc flags the docs that depend on it. Resolving a doc only states that it is still correct, so its dependents stay as they are.
+Tell freshdags which docs depend on which files:
 
-### The flow
+```sh
+freshdags add docs/api.md src/api/interface.py
+freshdags add README.md docs/api.md
+```
 
-1. A source changes — by a commit, or by `freshdags flag` for changes git cannot see.
-2. `freshdags check` reports every doc that is now older than one of its sources.
-3. Someone reviews the doc and either commits an update or, if nothing needs to change, runs `freshdags resolve`.
+This creates `freshdags.json` in the repository root. Commit it with your code.
 
-### External nodes
+Later, someone changes `src/api/interface.py` and commits. Now:
 
-freshdags cannot see changes outside the repository.
+```sh
+$ freshdags check
+docs/api.md drifted: src/api/interface.py changed since 3f2a91c
+  review:  git diff 3f2a91c..HEAD -- src/api/interface.py
+  then:    update docs/api.md, or run: freshdags resolve docs/api.md
 
-- **External doc** (e.g. a wiki page depending on repo code): a code change flags it; after updating the page, run `freshdags resolve ext:wiki-api`.
-- **External source** (e.g. a vendor API): when it changes, run `freshdags flag ext:stripe-api` to flag the docs that depend on it.
+🦡 1 doc drifted. The badger is watching.
+```
+
+Read the diff, then either:
+
+- **update the doc and commit it** — that clears the flag. Because the doc changed, `README.md` is flagged next, and you check it the same way; or
+- **run `freshdags resolve docs/api.md`** if the doc is still correct. Nothing changed, so `README.md` stays fresh.
+
+```sh
+$ freshdags check
+🦡✨ All 2 docs are fresh.
+```
+
+## Everyday use
+
+**A change was minor and no doc needs updating.** Resolve everything it flagged at once:
+
+```sh
+freshdags resolve --from src/api/interface.py
+```
+
+**Something changed that git cannot see** — a vendor API, or a behaviour change that did not touch the file a doc depends on:
+
+```sh
+freshdags flag ext:stripe-api --note "API v2 released"
+freshdags flag src/api/interface.py --note "timeouts now in seconds"
+```
+
+**See what depends on what:**
+
+```sh
+freshdags show                   # the whole graph
+freshdags show src/api/interface.py   # its sources and dependents
+```
+
+**Check a pull request in CI.** `check` exits with `1` when something drifted. It needs the git history, so fetch it fully:
+
+```yaml
+- uses: actions/checkout@v4
+  with:
+    fetch-depth: 0
+- run: uvx --from git+https://github.com/mkcode92/freshdags freshdags check
+```
+
+**Work with agents.** Set `flag` and `resolve` to `on-change` (see [Settings](#settings)), so drift shows up as soon as a file is saved, before anything is committed. Agents can read `freshdags check --json`.
+
+## What to track
+
+**Point docs at interfaces, not implementations.** If a doc depends on implementation details, every refactor flags it and the signal turns into noise. Keep APIs and interfaces in their own files and make docs depend on those.
+
+**Not only docs.** "Doc" and "source" are just roles. Any file can depend on any other, in any direction, as long as there are no cycles. That makes freshdags useful for invariant-based coding too, wherever one file must stay consistent with another:
+
+- an implementation depends on the spec or invariant it must satisfy;
+- a client depends on the server's API schema;
+- tests depend on the interface they pin down;
+- a migration or config depends on the model it mirrors.
+
+**Things outside the repository** are written as `ext:<name>`:
+
+- **External doc**, e.g. a wiki page that describes repo code: a code change flags it. After updating the page, run `freshdags resolve ext:wiki-api`. Resolve it once right after adding it, since it has no commits.
+- **External source**, e.g. a vendor API: freshdags cannot see it change, so run `freshdags flag ext:stripe-api` when it does.
 
 ## Commands
 
@@ -38,10 +102,10 @@ freshdags cannot see changes outside the repository.
 | `freshdags show [NODE]` | Print the graph, or one node's sources and dependents. |
 | `freshdags check [REV] [--json]` | List every drifted doc. Without `REV`, uses the current `freshdags.json` and working tree; with `REV`, evaluates the graph as of that commit. |
 | `freshdags resolve DOC...` | Mark docs as drift-free after reviewing them. |
-| `freshdags resolve --from SOURCE` | Resolve every doc that drifted because of SOURCE — for minor changes that need no doc update. |
+| `freshdags resolve --from SOURCE` | Resolve every doc that drifted because of SOURCE. |
 | `freshdags flag NODE [--note TEXT]` | Record that a source changed, flagging the docs that depend on it. |
 
-**Exit codes:** `0` no drift, `1` drift found, `2` usage or graph-file error. This makes `freshdags check` usable as a CI gate.
+**Exit codes:** `0` no drift, `1` drift found, `2` usage or graph-file error.
 
 ## Settings
 
@@ -52,41 +116,21 @@ Settings live in `freshdags.json`:
 | `flag` | A commit to a source flags its dependents. | Also an uncommitted save. | Only `freshdags flag` marks a source as changed. |
 | `resolve` | A commit to a doc resolves it. | Also an uncommitted save. | Only `freshdags resolve` resolves a doc. |
 
-In every mode, a doc also counts as up to date from the commit that created it. An external doc has no commits, so resolve it once after adding it.
+- **`on-change`** suits agents, which see drift before they commit. Uncommitted changes are timed by the file's modification time; files whose content matches `HEAD` are ignored. `check REV` always uses committed history only.
+- **`resolve: on-commit` / `on-change`** means updating a doc resolves it, with no extra step. The trade-off: any edit, even a typo fix, clears the flag. The edit shows up in review next to the source change.
+- **`resolve: manual`** makes every resolve an explicit, recorded decision.
 
-`on-change` suits agents, which see drift before they commit. Uncommitted changes are timed by the file's modification time; files whose content matches `HEAD` are ignored. `check REV` always evaluates committed history only.
+## How it works
 
-With `resolve` set to `on-commit` or `on-change`, updating a doc is resolving it — no extra step. The trade-off: any edit, even a typo fix, clears the flag; the edit shows up in review next to the source change. Use `manual` if every resolve should be an explicit, recorded decision.
+freshdags keeps your dependencies as a graph (a DAG) in `freshdags.json`. The rule is: **a doc must be at least as new as each of its sources.** If a source changed after the doc was last up to date, the doc is flagged until someone resolves it.
 
-A doc edit is a real change, so it also flags the docs that depend on it. Only the `resolve` command leaves dependents untouched.
+- **Times come from git:** a file's change time is the **author date** of the last commit that touched it. Author dates survive rebases, so rewriting a branch does not raise false flags. Because commits are the source of truth, a doc can be updated in a later commit of the same pull request.
+- **A doc is up to date** from the commit that created it, from its last commit (with `resolve: on-commit`), or from its last `resolve` — whichever is latest. The `git diff` hint in `check` starts at that commit.
+- **Changes ripple, resolves do not.** A real change to a doc flags the docs that depend on it. Resolving a doc only states that it is still correct, so its dependents stay as they are.
 
-## Output
+### The graph file
 
-`check` tells you what changed, where to look and how to clear the flag:
-
-```
-docs/api.md drifted: src/api.py changed since 3f2a91c
-  review:  git diff 3f2a91c..HEAD -- src/api.py
-  then:    update docs/api.md, or run: freshdags resolve docs/api.md
-
-🦡 1 doc drifted. The badger is watching.
-```
-
-When nothing drifted:
-
-```
-🦡✨ All 12 docs are fresh.
-```
-
-The badger only appears in human-readable output, never in `--json`. If the terminal cannot print emoji, it is left out.
-
-The diff starts at the commit where the doc was last up to date, so you only read what changed since. For external sources, the note from `freshdags flag --note` is shown instead.
-
-`check --json` prints the same report in machine-readable form for agents and tooling.
-
-## The graph file
-
-`freshdags.json` is written by the tool and committed with your code. Keys are sorted so diffs stay small. Only the latest `resolved` and `flagged` record per node is kept; git holds the history.
+`freshdags.json` is written by the tool; you should not need to edit it except for settings. Keys are sorted so diffs stay small. Only the latest `resolved` and `flagged` record per node is kept; git holds the history.
 
 ```json
 {
@@ -106,14 +150,10 @@ The diff starts at the commit where the doc was last up to date, so you only rea
 }
 ```
 
-## Recommended practice
-
-Point documentation at interfaces and APIs, not implementation files. If docs depend on implementation details, every refactor flags them and the signal turns into noise.
-
 ## Known limitations
 
 - `resolve` and `flag` record the current wall-clock time, while commits carry the author's machine time. Clock skew between machines can misorder events that happen within minutes of each other.
-- In `on-change` mode, wall-clock modification times are compared with commit author dates, with the same skew caveat.
+- In `on-change` mode, file modification times are compared with commit author dates, with the same caveat.
 
 ## Planned
 
@@ -132,3 +172,7 @@ uv run freshdags --help
 uv run pytest
 uv run ruff check . && uv run ruff format --check .
 ```
+
+## License
+
+[MIT](LICENSE)
