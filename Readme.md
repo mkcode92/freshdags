@@ -1,4 +1,4 @@
-# freshdags
+# freshdags 🦡✨
 
 A small CLI that helps prevent documentation drift — especially in codebases where agents change code faster than anyone re-reads the docs.
 
@@ -68,7 +68,17 @@ A doc edit is a real change, so it also flags the docs that depend on it. Only t
 docs/api.md drifted: src/api.py changed since 3f2a91c
   review:  git diff 3f2a91c..HEAD -- src/api.py
   then:    update docs/api.md, or run: freshdags resolve docs/api.md
+
+🦡 1 doc drifted. The badger is watching.
 ```
+
+When nothing drifted:
+
+```
+🦡✨ All 12 docs are fresh.
+```
+
+The badger only appears in human-readable output, never in `--json`. If the terminal cannot print emoji, it is left out.
 
 The diff starts at the commit where the doc was last up to date, so you only read what changed since. For external sources, the note from `freshdags flag --note` is shown instead.
 

@@ -69,6 +69,31 @@ def test_external_source_shows_flag_note(repo: GitRepo, cli: Cli, clock: Clock) 
     assert "git diff" not in output
 
 
+def test_summary_when_fresh(repo: GitRepo, cli: Cli) -> None:
+    setup_api_doc(repo, cli)
+
+    output = cli("check").output
+
+    assert "🦡" in output
+    assert "1 doc is fresh" in output
+
+
+def test_summary_counts_drifted_docs(repo: GitRepo, cli: Cli) -> None:
+    setup_api_doc(repo, cli)
+    repo.commit({"src/api.py": "api v2"}, date=T2)
+
+    output = cli("check").output
+
+    assert "🦡 1 doc drifted" in output
+
+
+def test_json_output_has_no_badger(repo: GitRepo, cli: Cli) -> None:
+    setup_api_doc(repo, cli)
+    repo.commit({"src/api.py": "api v2"}, date=T2)
+
+    assert "🦡" not in cli("check", "--json").output
+
+
 def test_json_output(repo: GitRepo, cli: Cli) -> None:
     fresh = setup_api_doc(repo, cli)
     changed = repo.commit({"src/api.py": "api v2"}, date=T2)
