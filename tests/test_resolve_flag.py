@@ -82,7 +82,6 @@ def test_resolve_from_skips_docs_that_were_not_flagged(
         repo.write(path, "v1")
     cli("add", "docs/a.md", "src/api.py")
     cli("add", "docs/b.md", "src/api.py")
-    repo.set_setting("resolve", "on-commit")
     repo.commit(date=T1)
     repo.commit({"src/api.py": "v2"}, date=T2)
     repo.commit({"docs/b.md": "v2"}, date=T3)

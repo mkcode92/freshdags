@@ -20,7 +20,7 @@ Times come from git: a file's change time is the **author date** of the last com
 
 1. A source changes — by a commit, or by `freshdags flag` for changes git cannot see.
 2. `freshdags check` reports every doc that is now older than one of its sources.
-3. Someone reviews the doc, updates it if needed, and runs `freshdags resolve` (or, with `resolve: on-commit`, just commits the update).
+3. Someone reviews the doc and either commits an update or, if nothing needs to change, runs `freshdags resolve`.
 
 ### External nodes
 
@@ -47,16 +47,16 @@ freshdags cannot see changes outside the repository.
 
 Settings live in `freshdags.json`:
 
-| Setting | `manual` | `on-commit` | `on-change` |
+| Setting | `on-commit` (default) | `on-change` | `manual` |
 |---|---|---|---|
-| `flag` (default `on-commit`) | Only `freshdags flag` marks a source as changed. | A commit to a source flags its dependents. | Also an uncommitted save. |
-| `resolve` (default `manual`) | Only `freshdags resolve` resolves a doc. | A commit to a doc resolves it. | Also an uncommitted save. |
+| `flag` | A commit to a source flags its dependents. | Also an uncommitted save. | Only `freshdags flag` marks a source as changed. |
+| `resolve` | A commit to a doc resolves it. | Also an uncommitted save. | Only `freshdags resolve` resolves a doc. |
 
-In every mode, a doc counts as up to date from the commit that created it until it is first resolved. An external doc has no commits, so resolve it once after adding it.
+In every mode, a doc also counts as up to date from the commit that created it. An external doc has no commits, so resolve it once after adding it.
 
 `on-change` suits agents, which see drift before they commit. Uncommitted changes are timed by the file's modification time; files whose content matches `HEAD` are ignored. `check REV` always evaluates committed history only.
 
-`resolve` defaults to `manual`, so every resolve is an explicit decision. With `on-commit` or `on-change`, any edit to a doc — even a typo fix — counts as resolving it.
+With `resolve` set to `on-commit` or `on-change`, updating a doc is resolving it — no extra step. The trade-off: any edit, even a typo fix, clears the flag; the edit shows up in review next to the source change. Use `manual` if every resolve should be an explicit, recorded decision.
 
 A doc edit is a real change, so it also flags the docs that depend on it. Only the `resolve` command leaves dependents untouched.
 
@@ -91,7 +91,7 @@ The diff starts at the commit where the doc was last up to date, so you only rea
     },
     "src/api/interface.py": {}
   },
-  "settings": { "flag": "on-commit", "resolve": "manual" },
+  "settings": { "flag": "on-commit", "resolve": "on-commit" },
   "version": 1
 }
 ```
