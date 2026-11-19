@@ -43,6 +43,16 @@ class GitRepo:
         )
         return result.stdout.strip()
 
+    def save(self, path: str, content: str, *, at: str) -> Path:
+        """Write a file without committing it, with its modification time set to ISO `at`."""
+        file = self.write(path, content)
+        timestamp = datetime.fromisoformat(at).timestamp()
+        os.utime(file, (timestamp, timestamp))
+        return file
+
+    def short(self, rev: str = "HEAD") -> str:
+        return self.git("rev-parse", "--short", rev)
+
     def write(self, path: str, content: str = "") -> Path:
         file = self.root / path
         file.parent.mkdir(parents=True, exist_ok=True)

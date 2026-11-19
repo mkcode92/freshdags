@@ -12,7 +12,7 @@ def test_add_creates_graph_file_with_defaults(repo: GitRepo, cli: Cli) -> None:
     assert result.exit_code == 0, result.output
     graph = repo.graph()
     assert graph["version"] == 1
-    assert graph["settings"] == {"flag": "on-commit", "resolve": "on-commit"}
+    assert graph["settings"] == {"flag": "on-commit", "resolve": "manual"}
     assert graph["nodes"]["docs/api.md"]["depends_on"] == ["src/api.py"]
     assert "src/api.py" in graph["nodes"]
 
