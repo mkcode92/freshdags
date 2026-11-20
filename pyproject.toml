@@ -10,6 +10,7 @@ authors = [
 ]
 requires-python = ">=3.12"
 dependencies = [
+    "pydantic>=2.14.3",
     "typer>=0.29.2",
 ]
 keywords = ["documentation", "drift", "dag", "git", "cli", "agents"]

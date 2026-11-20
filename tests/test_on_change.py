@@ -1,104 +1,100 @@
 """`on-change` mode: uncommitted saves count too, using the file's modification time.
 
 `on-change` includes everything `on-commit` does. It only applies to `check` without a
-revision; `check REV` evaluates committed history only.
+revision; `check(rev)` evaluates committed history only.
 """
 
-from conftest import Cli, Clock, GitRepo
+from support import T1, T2, T3, Clock, GitRepo, setup_api_doc
 
-T1 = "2026-01-01T10:00:00+00:00"
-T2 = "2026-01-02T10:00:00+00:00"
-T3 = "2026-01-03T10:00:00+00:00"
+from freshdags.api import FreshdagsApi
 
 
-def setup_api_doc(repo: GitRepo, cli: Cli, *, flag: str, resolve: str) -> None:
-    repo.write("docs/api.md", "doc v1")
-    repo.write("src/api.py", "api v1")
-    assert cli("add", "docs/api.md", "src/api.py").exit_code == 0
+def setup_modes(repo: GitRepo, fd: FreshdagsApi, *, flag: str, resolve: str) -> None:
+    setup_api_doc(repo, fd)
     repo.set_setting("flag", flag)
     repo.set_setting("resolve", resolve)
     repo.commit(date=T1)
 
 
-def test_on_commit_ignores_unsaved_source_change(repo: GitRepo, cli: Cli) -> None:
-    setup_api_doc(repo, cli, flag="on-commit", resolve="on-commit")
+def add_readme_over_api_doc(repo: GitRepo, fd: FreshdagsApi) -> None:
+    repo.write("README.md", "overview v1")
+    fd.add("README.md", "docs/api.md")
+    repo.commit(date=T1)
+
+
+def test_on_commit_ignores_unsaved_source_change(repo: GitRepo, fd: FreshdagsApi) -> None:
+    setup_modes(repo, fd, flag="on-commit", resolve="on-commit")
     repo.save("src/api.py", "api v2", at=T2)
 
-    assert cli("check").exit_code == 0
+    assert fd.check().ok
 
 
-def test_on_change_flags_uncommitted_source_change(repo: GitRepo, cli: Cli) -> None:
-    setup_api_doc(repo, cli, flag="on-change", resolve="on-commit")
+def test_on_change_flags_uncommitted_source_change(repo: GitRepo, fd: FreshdagsApi) -> None:
+    setup_modes(repo, fd, flag="on-change", resolve="on-commit")
     repo.save("src/api.py", "api v2", at=T2)
 
-    result = cli("check")
+    report = fd.check()
 
-    assert result.exit_code == 1
-    assert "docs/api.md" in result.output
+    assert report.drifted_docs == ["docs/api.md"]
+    assert report.drift[0].source_changed_commit is None
 
 
-def test_on_change_still_counts_commits(repo: GitRepo, cli: Cli) -> None:
-    setup_api_doc(repo, cli, flag="on-change", resolve="on-change")
+def test_on_change_still_counts_commits(repo: GitRepo, fd: FreshdagsApi) -> None:
+    setup_modes(repo, fd, flag="on-change", resolve="on-change")
     repo.commit({"src/api.py": "api v2"}, date=T2)
 
-    assert cli("check").exit_code == 1
+    assert not fd.check().ok
 
 
-def test_on_change_resolves_by_saving_doc(repo: GitRepo, cli: Cli) -> None:
-    setup_api_doc(repo, cli, flag="on-change", resolve="on-change")
+def test_on_change_resolves_by_saving_doc(repo: GitRepo, fd: FreshdagsApi) -> None:
+    setup_modes(repo, fd, flag="on-change", resolve="on-change")
     repo.save("src/api.py", "api v2", at=T2)
     repo.save("docs/api.md", "doc v2", at=T3)
 
-    assert cli("check").exit_code == 0
+    assert fd.check().ok
 
 
-def test_on_change_ignores_mtime_of_unmodified_files(repo: GitRepo, cli: Cli) -> None:
+def test_on_change_ignores_mtime_of_unmodified_files(repo: GitRepo, fd: FreshdagsApi) -> None:
     """A checkout or touch changes mtimes without changing content; that is not a change."""
-    setup_api_doc(repo, cli, flag="on-change", resolve="on-change")
+    setup_modes(repo, fd, flag="on-change", resolve="on-change")
     repo.save("src/api.py", "api v1", at=T3)
 
-    assert cli("check").exit_code == 0
+    assert fd.check().ok
 
 
-def test_on_change_counts_new_untracked_source(repo: GitRepo, cli: Cli) -> None:
-    setup_api_doc(repo, cli, flag="on-change", resolve="on-change")
+def test_on_change_counts_new_untracked_source(repo: GitRepo, fd: FreshdagsApi) -> None:
+    setup_modes(repo, fd, flag="on-change", resolve="on-change")
     repo.save("src/extra.py", "new", at=T2)
-    assert cli("add", "docs/api.md", "src/extra.py").exit_code == 0
+    fd.add("docs/api.md", "src/extra.py")
 
-    assert cli("check").exit_code == 1
+    assert fd.check().drifted_docs == ["docs/api.md"]
 
 
-def test_saving_child_doc_flags_parent(repo: GitRepo, cli: Cli) -> None:
+def test_saving_child_doc_flags_parent(repo: GitRepo, fd: FreshdagsApi) -> None:
     """Resolving by saving is a real change, so it ripples to dependents."""
-    setup_api_doc(repo, cli, flag="on-change", resolve="on-change")
-    repo.write("README.md", "overview v1")
-    cli("add", "README.md", "docs/api.md")
-    repo.commit(date=T1)
+    setup_modes(repo, fd, flag="on-change", resolve="on-change")
+    add_readme_over_api_doc(repo, fd)
     repo.save("src/api.py", "api v2", at=T2)
     repo.save("docs/api.md", "doc v2", at=T3)
 
-    result = cli("check")
-
-    assert result.exit_code == 1
-    assert "README.md" in result.output
-    assert "docs/api.md" in result.output
+    assert fd.check().drifted_docs == ["README.md"]
 
 
-def test_resolve_command_does_not_flag_parent(repo: GitRepo, cli: Cli, clock: Clock) -> None:
-    setup_api_doc(repo, cli, flag="on-change", resolve="on-change")
-    repo.write("README.md", "overview v1")
-    cli("add", "README.md", "docs/api.md")
-    repo.commit(date=T1)
+def test_resolve_command_does_not_flag_parent(
+    repo: GitRepo, fd: FreshdagsApi, clock: Clock
+) -> None:
+    setup_modes(repo, fd, flag="on-change", resolve="on-change")
+    add_readme_over_api_doc(repo, fd)
     repo.save("src/api.py", "api v2", at=T2)
-    clock(T3)
+    clock.set(T3)
 
-    cli("resolve", "docs/api.md")
+    fd.resolve("docs/api.md")
 
-    assert cli("check").exit_code == 0
+    assert fd.check().ok
 
 
-def test_check_at_revision_ignores_working_tree(repo: GitRepo, cli: Cli) -> None:
-    setup_api_doc(repo, cli, flag="on-change", resolve="on-change")
+def test_check_at_revision_ignores_working_tree(repo: GitRepo, fd: FreshdagsApi) -> None:
+    setup_modes(repo, fd, flag="on-change", resolve="on-change")
     repo.save("src/api.py", "api v2", at=T2)
 
-    assert cli("check", "HEAD").exit_code == 0
+    assert fd.check("HEAD").ok

@@ -46,10 +46,10 @@ $ freshdags check
 
 ## Everyday use
 
-**A change was minor and no doc needs updating.** Resolve everything it flagged at once:
+**A change was minor and no doc needs updating.** Resolve every drifted doc at once:
 
 ```sh
-freshdags resolve --from src/api/interface.py
+freshdags resolve --all
 ```
 
 **Something changed that git cannot see** — a vendor API, or a behaviour change that did not touch the file a doc depends on:
@@ -102,7 +102,7 @@ freshdags show src/api/interface.py   # its sources and dependents
 | `freshdags show [NODE]` | Print the graph, or one node's sources and dependents. |
 | `freshdags check [REV] [--json]` | List every drifted doc. Without `REV`, uses the current `freshdags.json` and working tree; with `REV`, evaluates the graph as of that commit. |
 | `freshdags resolve DOC...` | Mark docs as drift-free after reviewing them. |
-| `freshdags resolve --from SOURCE` | Resolve every doc that drifted because of SOURCE. |
+| `freshdags resolve --all` | Resolve every drifted doc, when the change needed no doc update. |
 | `freshdags flag NODE [--note TEXT]` | Record that a source changed, flagging the docs that depend on it. |
 
 **Exit codes:** `0` no drift, `1` drift found, `2` usage or graph-file error.
