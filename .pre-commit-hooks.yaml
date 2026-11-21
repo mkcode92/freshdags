@@ -1,0 +1,8 @@
+# Hook definition for other repositories that use freshdags via pre-commit.
+- id: freshdags
+  name: freshdags
+  description: Fail when a doc is older than one of the files it depends on.
+  entry: freshdags check --uncommitted
+  language: python
+  pass_filenames: false
+  always_run: true

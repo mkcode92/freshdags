@@ -6,11 +6,11 @@ A small CLI that helps prevent documentation drift — especially in codebases w
 
 ## Install
 
-Not on PyPI yet. Install from GitHub:
-
 ```sh
-uv tool install git+https://github.com/mkcode92/freshdags
+uv tool install freshdags   # or: pipx install freshdags
 ```
+
+Until the first release on PyPI, install from GitHub instead: `uv tool install git+https://github.com/mkcode92/freshdags`.
 
 ## Quick start
 
@@ -67,16 +67,29 @@ freshdags show                   # the whole graph
 freshdags show src/api/interface.py   # its sources and dependents
 ```
 
-**Check a pull request in CI.** `check` exits with `1` when something drifted. It needs the git history, so fetch it fully:
+**Stop drift before it is committed** with [pre-commit](https://pre-commit.com). Add to `.pre-commit-config.yaml`:
+
+```yaml
+repos:
+  - repo: https://github.com/mkcode92/freshdags
+    rev: v0.1.0
+    hooks:
+      - id: freshdags
+```
+
+The hook runs `freshdags check --uncommitted`: the changes you are committing count as a commit made now, so a source change without its doc update fails the commit. It also fails while older drift is still open.
+
+**Check a pull request in CI**, for drift that was committed anyway. `check` exits with `1` when something drifted. It needs the git history, so fetch it fully:
 
 ```yaml
 - uses: actions/checkout@v4
   with:
     fetch-depth: 0
-- run: uvx --from git+https://github.com/mkcode92/freshdags freshdags check
+- uses: astral-sh/setup-uv@v6
+- run: uvx freshdags check
 ```
 
-**Work with agents.** Set `flag` and `resolve` to `on-change` (see [Settings](#settings)), so drift shows up as soon as a file is saved, before anything is committed. Agents can read `freshdags check --json`.
+**Work with agents.** Run `freshdags configure --auto-flag on-change --auto-resolve on-change` (see [Settings](#settings)), so drift shows up as soon as a file is saved, before anything is committed. Agents can read `freshdags check --json`.
 
 ## What to track
 
@@ -101,10 +114,11 @@ freshdags show src/api/interface.py   # its sources and dependents
 | `freshdags add DOC SOURCE...` | Record that DOC depends on each SOURCE. Creates `freshdags.json` if needed. Refuses missing files, self-dependencies and cycles. |
 | `freshdags rm DOC SOURCE...` | Remove those dependencies. Nodes left without any dependency are removed. |
 | `freshdags show [NODE]` | Print the graph, or one node's sources and dependents. |
-| `freshdags check [REV] [--json]` | List every drifted doc. Without `REV`, uses the current `freshdags.json` and working tree; with `REV`, evaluates the graph as of that commit. |
+| `freshdags check [REV] [--json] [--uncommitted]` | List every drifted doc. Without `REV`, uses the current `freshdags.json` and working tree; with `REV`, evaluates the graph as of that commit. `--uncommitted` counts uncommitted changes as a commit made now, for pre-commit hooks. |
 | `freshdags resolve DOC...` | Mark docs as drift-free after reviewing them. |
 | `freshdags resolve --all` | Resolve every drifted doc, when the change needed no doc update. |
 | `freshdags flag NODE [--note TEXT]` | Record that a source changed, flagging the docs that depend on it. |
+| `freshdags configure [--auto-flag MODE] [--auto-resolve MODE]` | Show the settings, or change them. |
 
 **Exit codes:** `0` no drift, `1` drift found, `2` usage or graph-file error.
 
@@ -112,28 +126,28 @@ freshdags show src/api/interface.py   # its sources and dependents
 
 ## Settings
 
-Settings live in `freshdags.json`:
+Settings live in `freshdags.json`. Show them with `freshdags configure`, change them with e.g. `freshdags configure --auto-flag on-change --auto-resolve on-change`. They decide what happens automatically; the `flag` and `resolve` commands work in every mode.
 
-| Setting | `on-commit` (default) | `on-change` | `manual` |
+| Setting | `on-commit` (default) | `on-change` | `off` |
 |---|---|---|---|
-| `flag` | A commit to a source flags its dependents. | Also an uncommitted save. | Only `freshdags flag` marks a source as changed. |
-| `resolve` | A commit to a doc resolves it. | Also an uncommitted save. | Only `freshdags resolve` resolves a doc. |
+| `auto-flag` | A commit to a source flags its dependents. | Also an uncommitted save. | Only `freshdags flag` marks a source as changed. |
+| `auto-resolve` | A commit to a doc resolves it. | Also an uncommitted save. | Only `freshdags resolve` resolves a doc. |
 
 - **`on-change`** suits agents, which see drift before they commit. Uncommitted changes are timed by the file's modification time; files whose content matches `HEAD` are ignored. `check REV` always uses committed history only.
-- **`resolve: on-commit` / `on-change`** means updating a doc resolves it, with no extra step. The trade-off: any edit, even a typo fix, clears the flag. The edit shows up in review next to the source change.
-- **`resolve: manual`** makes every resolve an explicit, recorded decision.
+- **`auto-resolve: on-commit` / `on-change`** means updating a doc resolves it, with no extra step. The trade-off: any edit, even a typo fix, clears the flag. The edit shows up in review next to the source change.
+- **`auto-resolve: off`** makes every resolve an explicit, recorded decision.
 
 ## How it works
 
 freshdags keeps your dependencies as a graph (a DAG) in `freshdags.json`. The rule is: **a doc must be at least as new as each of its sources.** If a source changed after the doc was last up to date, the doc is flagged until someone resolves it.
 
 - **Times come from git:** a file's change time is the **author date** of the last commit that touched it. Author dates survive rebases, so rewriting a branch does not raise false flags. Because commits are the source of truth, a doc can be updated in a later commit of the same pull request.
-- **A doc is up to date** from the commit that created it, from its last commit (with `resolve: on-commit`), or from its last `resolve` — whichever is latest. The `git diff` hint in `check` starts at that commit.
+- **A doc is up to date** from the commit that created it, from its last commit (with `auto-resolve: on-commit`), or from its last `resolve` — whichever is latest. The `git diff` hint in `check` starts at that commit.
 - **Changes ripple, resolves do not.** A real change to a doc flags the docs that depend on it. Resolving a doc only states that it is still correct, so its dependents stay as they are.
 
 ### The graph file
 
-`freshdags.json` is written by the tool; you should not need to edit it except for settings. Keys are sorted so diffs stay small. Only the latest `resolved` and `flagged` record per node is kept; git holds the history.
+`freshdags.json` is written by the tool; you should not need to edit it by hand. Keys are sorted so diffs stay small. Only the latest `resolved` and `flagged` record per node is kept; git holds the history.
 
 ```json
 {
@@ -148,10 +162,12 @@ freshdags keeps your dependencies as a graph (a DAG) in `freshdags.json`. The ru
     },
     "src/api/interface.py": {}
   },
-  "settings": { "flag": "on-commit", "resolve": "on-commit" },
+  "settings": { "auto-flag": "on-commit", "auto-resolve": "on-commit" },
   "version": 1
 }
 ```
+
+**Format versions.** `version` changes only when the format changes in a breaking way. A newer freshdags reads older files and upgrades them; the next command that writes the file saves the new format, which shows up as a normal diff. An older freshdags refuses a newer file and asks you to upgrade.
 
 ## Known limitations
 
@@ -163,7 +179,7 @@ freshdags keeps your dependencies as a graph (a DAG) in `freshdags.json`. The ru
 - `--base REV` for `check`, to report only drift introduced by a pull request
 - `show --format dot` for drawing the graph with Graphviz
 - Directory and glob sources, so a per-directory README tracks new files automatically
-- A ready-made snippet for `AGENTS.md` / `CLAUDE.md` and example hooks
+- A ready-made snippet for `AGENTS.md` / `CLAUDE.md`
 
 ## Development
 
@@ -171,10 +187,13 @@ Requires [uv](https://docs.astral.sh/uv/).
 
 ```sh
 uv sync
+uv run pre-commit install   # freshdags checks its own docs before each commit
 uv run freshdags --help
 uv run pytest
 uv run ruff check . && uv run ruff format --check .
 ```
+
+**Releasing:** bump `version` in `pyproject.toml`, commit, and push a tag like `v0.1.0`. The publish workflow checks that the tag matches the version, builds, and uploads to PyPI.
 
 ## License
 

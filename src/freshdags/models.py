@@ -1,13 +1,27 @@
 """Data models: the graph file, its settings, and the results of queries."""
 
 import json
+from collections.abc import Callable
 from enum import StrEnum
-from typing import Literal, Self
+from typing import Any, Self
 
-from pydantic import AwareDatetime, BaseModel, ConfigDict, field_validator
+from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, field_validator
 
 GRAPH_FILE = "freshdags.json"
 EXTERNAL_PREFIX = "ext:"
+
+GRAPH_VERSION = 1
+"""Format version of freshdags.json. Bump it only for breaking changes, and add an upgrade."""
+
+UPGRADES: dict[int, Callable[[dict[str, Any]], dict[str, Any]]] = {}
+"""`UPGRADES[n]` turns the raw data of a version-n file into version n + 1."""
+
+
+def upgrade(data: dict[str, Any]) -> dict[str, Any]:
+    """Bring raw graph data of an older (or the current) version to GRAPH_VERSION."""
+    while (version := data["version"]) < GRAPH_VERSION:
+        data = UPGRADES[version](data) | {"version": version + 1}
+    return data
 
 
 def is_external(node: str) -> bool:
@@ -18,21 +32,28 @@ def is_external(node: str) -> bool:
 
 
 class Mode(StrEnum):
-    """What counts as a change (`flag`) or as bringing a doc up to date (`resolve`)."""
+    """What flags a source (`auto-flag`) or resolves a doc (`auto-resolve`) automatically.
 
-    MANUAL = "manual"
-    """Only the `flag` / `resolve` command."""
+    The `flag` and `resolve` commands work in every mode.
+    """
+
+    OFF = "off"
+    """Nothing automatic; only the commands."""
     ON_COMMIT = "on-commit"
-    """A commit to the file, or the command."""
+    """A commit to the file."""
     ON_CHANGE = "on-change"
-    """An uncommitted save, a commit, or the command."""
+    """A commit, or an uncommitted save."""
 
 
 class Settings(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    """Written as `auto-flag` / `auto-resolve` in freshdags.json."""
 
-    flag: Mode = Mode.ON_COMMIT
-    resolve: Mode = Mode.ON_COMMIT
+    model_config = ConfigDict(extra="forbid", validate_by_name=True, validate_by_alias=True)
+
+    auto_flag: Mode = Field(Mode.ON_COMMIT, alias="auto-flag")
+    """What marks a source as changed, besides `freshdags flag`."""
+    auto_resolve: Mode = Field(Mode.ON_COMMIT, alias="auto-resolve")
+    """What brings a doc up to date, besides `freshdags resolve`."""
 
 
 # --- graph ---------------------------------------------------------------------------------
@@ -97,7 +118,7 @@ class Graph(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    version: Literal[1] = 1
+    version: int = GRAPH_VERSION
     settings: Settings = Settings()
     nodes: dict[str, Node] = {}
 
@@ -121,7 +142,7 @@ class Graph(BaseModel):
         """
         data = {
             "version": self.version,
-            "settings": self.settings.model_dump(mode="json"),
+            "settings": self.settings.model_dump(mode="json", by_alias=True),
             "nodes": {
                 name: node.model_dump(mode="json", exclude_defaults=True)
                 for name, node in self.nodes.items()

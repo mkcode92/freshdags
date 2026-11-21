@@ -1,0 +1,17 @@
+{
+  "nodes": {
+    "Readme.md": {
+      "depends_on": [
+        "src/freshdags/api.py",
+        "src/freshdags/cli.py"
+      ]
+    },
+    "src/freshdags/api.py": {},
+    "src/freshdags/cli.py": {}
+  },
+  "settings": {
+    "auto-flag": "on-change",
+    "auto-resolve": "on-change"
+  },
+  "version": 1
+}

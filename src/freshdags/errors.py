@@ -40,3 +40,12 @@ class CycleError(FreshdagsError):
     def __init__(self, cycle: list[str]) -> None:
         super().__init__(f"This would create a cycle: {' -> '.join(cycle)}")
         self.cycle = cycle
+
+
+class UnsupportedVersionError(FreshdagsError):
+    def __init__(self, version: int, supported: int) -> None:
+        super().__init__(
+            f"{GRAPH_FILE} has format version {version}; this freshdags understands up to "
+            f"{supported}. Please upgrade freshdags."
+        )
+        self.version = version

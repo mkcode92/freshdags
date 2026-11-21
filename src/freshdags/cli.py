@@ -21,7 +21,8 @@ from freshdags import __version__
 from freshdags.api import FreshdagsApi
 from freshdags.core import Freshdags
 from freshdags.errors import FreshdagsError
-from freshdags.render import render_check, render_graph, render_node
+from freshdags.models import Mode
+from freshdags.render import render_check, render_graph, render_node, render_settings
 
 app = typer.Typer(
     name="freshdags",
@@ -139,6 +140,20 @@ def rm(
 
 @app.command()
 @handle_errors
+def configure(
+    auto_flag: Annotated[
+        Mode | None, typer.Option(help="What marks a source as changed automatically.")
+    ] = None,
+    auto_resolve: Annotated[
+        Mode | None, typer.Option(help="What brings a doc up to date automatically.")
+    ] = None,
+) -> None:
+    """Show the settings, or change them with --auto-flag / --auto-resolve."""
+    output.result(render_settings(api().configure(auto_flag=auto_flag, auto_resolve=auto_resolve)))
+
+
+@app.command()
+@handle_errors
 def show(
     node: Annotated[str | None, typer.Argument(help="Show only this node.")] = None,
 ) -> None:
@@ -154,9 +169,15 @@ def check(
         str | None, typer.Argument(help="Check as of this commit. Default: working tree.")
     ] = None,
     as_json: Annotated[bool, typer.Option("--json", help="Machine-readable output.")] = False,
+    uncommitted: Annotated[
+        bool,
+        typer.Option(
+            "--uncommitted", help="Count uncommitted changes as a commit made now (pre-commit)."
+        ),
+    ] = False,
 ) -> None:
     """List every doc that is older than one of its sources. Exits 1 on drift."""
-    report = api().check(rev)
+    report = api().check(rev, uncommitted=uncommitted)
     if as_json:
         output.result(report.model_dump_json(indent=2))
     else:

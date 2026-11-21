@@ -1,0 +1,20 @@
+name: Publish to PyPI
+
+# Push a tag like v0.1.0 to publish. The tag must match the version in pyproject.toml.
+on:
+  push:
+    tags: ["v*"]
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write # trusted publishing: PyPI accepts this job without an API token
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - name: Check that the tag matches the project version
+        run: test "v$(uv version --short)" = "$GITHUB_REF_NAME"
+      - run: uv build
+      - run: uv publish --trusted-publishing always

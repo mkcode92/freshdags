@@ -24,5 +24,5 @@ def test_git_config_is_isolated(repo: GitRepo) -> None:
 
 def test_set_setting_keeps_graph_valid(repo: GitRepo) -> None:
     (repo.root / "freshdags.json").write_text(Graph().to_json(), encoding="utf-8")
-    repo.set_setting("resolve", "manual")
-    assert Graph.from_json(repo.graph_text()).settings.resolve == "manual"
+    repo.set_setting("auto-resolve", "off")
+    assert Graph.from_json(repo.graph_text()).settings.auto_resolve == "off"

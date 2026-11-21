@@ -1,6 +1,7 @@
 """The implementation of FreshdagsApi."""
 
 import getpass
+import json
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -17,10 +18,12 @@ from freshdags.errors import (
     UnknownEdgeError,
     UnknownFileError,
     UnknownNodeError,
+    UnsupportedVersionError,
 )
 from freshdags.git import Git, GitError
 from freshdags.models import (
     GRAPH_FILE,
+    GRAPH_VERSION,
     CheckReport,
     Drift,
     Flag,
@@ -29,7 +32,9 @@ from freshdags.models import (
     Node,
     NodeView,
     Resolution,
+    Settings,
     is_external,
+    upgrade,
 )
 
 
@@ -41,6 +46,11 @@ def watches_commits(mode: Mode) -> bool:
 def watches_saves(mode: Mode) -> bool:
     """Whether uncommitted saves to a file count in this mode."""
     return mode is Mode.ON_CHANGE
+
+
+def counting_saves(mode: Mode) -> Mode:
+    """The mode for `check --uncommitted`: commits that are still pending count too."""
+    return Mode.ON_CHANGE if mode is Mode.ON_COMMIT else mode
 
 
 @dataclass(frozen=True)
@@ -91,7 +101,7 @@ class Freshdags(FreshdagsApi):
     # --- editing the graph ------------------------------------------------------------------
 
     def add(self, doc: str, *sources: str) -> None:
-        graph = self._load() if self._graph_path.exists() else Graph()
+        graph = self._load_or_new()
         doc = self._normalise(doc)
         names = [self._normalise(source) for source in sources]
         for name in (doc, *names):
@@ -125,6 +135,17 @@ class Freshdags(FreshdagsApi):
         }
         self._save(graph)
 
+    def configure(
+        self, *, auto_flag: Mode | None = None, auto_resolve: Mode | None = None
+    ) -> Settings:
+        graph = self._load_or_new()
+        given = {"auto_flag": auto_flag, "auto_resolve": auto_resolve}
+        changes = {key: value for key, value in given.items() if value}
+        if changes or not self._graph_path.exists():
+            graph.settings = graph.settings.model_copy(update=changes)
+            self._save(graph)
+        return graph.settings
+
     # --- reading the graph ------------------------------------------------------------------
 
     def graph(self) -> Graph:
@@ -141,19 +162,26 @@ class Freshdags(FreshdagsApi):
 
     # --- drift ------------------------------------------------------------------------------
 
-    def check(self, rev: str | None = None) -> CheckReport:
+    def check(self, rev: str | None = None, *, uncommitted: bool = False) -> CheckReport:
+        if uncommitted and rev is not None:
+            raise FreshdagsError("--uncommitted checks the working tree, not a revision.")
         graph = self._load(rev)
-        history = self._history(graph, rev)
         settings = graph.settings
+        if uncommitted:
+            settings = Settings(
+                auto_flag=counting_saves(settings.auto_flag),
+                auto_resolve=counting_saves(settings.auto_resolve),
+            )
+        history = self._history(graph, rev, settings, saved_at=self._now() if uncommitted else None)
         drift = []
         docs = 0
         for doc, node in sorted(graph.nodes.items()):
             if not node.depends_on:
                 continue
             docs += 1
-            fresh = self._fresh(doc, node, history, settings.resolve)
+            fresh = self._fresh(doc, node, history, settings.auto_resolve)
             for source in node.depends_on:
-                changed = self._changed(source, graph.nodes[source], history, settings.flag)
+                changed = self._changed(source, graph.nodes[source], history, settings.auto_flag)
                 if changed is None or (fresh is not None and changed.at <= fresh.at):
                     continue
                 drift.append(
@@ -216,7 +244,9 @@ class Freshdags(FreshdagsApi):
     log_batch_size = 200
     """Paths per `git log` call. Windows limits a command line to 32,767 characters."""
 
-    def _history(self, graph: Graph, rev: str | None) -> History:
+    def _history(
+        self, graph: Graph, rev: str | None, settings: Settings, saved_at: datetime | None
+    ) -> History:
         paths = sorted(name for name in graph.nodes if not is_external(name))
         last: dict[str, Moment] = {}
         first: dict[str, Moment] = {}
@@ -237,13 +267,15 @@ class Freshdags(FreshdagsApi):
                         last[line] = moment
                     if line not in first or moment.at <= first[line].at:
                         first[line] = moment
-        settings = graph.settings
-        any_saves = watches_saves(settings.flag) or watches_saves(settings.resolve)
-        saved = self._saved(paths) if rev is None and any_saves else {}
+        any_saves = watches_saves(settings.auto_flag) or watches_saves(settings.auto_resolve)
+        saved = self._saved(paths, saved_at) if rev is None and any_saves else {}
         return History(last=last, first=first, saved=saved)
 
-    def _saved(self, paths: list[str]) -> dict[str, Moment]:
-        """Uncommitted changes (modified or untracked) among `paths`, timed by mtime.
+    def _saved(self, paths: list[str], at: datetime | None) -> dict[str, Moment]:
+        """Uncommitted changes (modified or untracked) among `paths`.
+
+        Timed by file modification time, or all at `at` when given: then they count as one
+        pending commit, so their order does not matter.
 
         Asks for the whole working tree and filters here, so the command line stays short.
         """
@@ -261,7 +293,7 @@ class Freshdags(FreshdagsApi):
                 next(entries, None)  # the original path of a rename or copy
             file = self.root / path
             if path in wanted and file.is_file():
-                saved[path] = Moment(datetime.fromtimestamp(file.stat().st_mtime, UTC))
+                saved[path] = Moment(at or datetime.fromtimestamp(file.stat().st_mtime, UTC))
         return saved
 
     def _head(self) -> str | None:
@@ -298,9 +330,21 @@ class Freshdags(FreshdagsApi):
             except GitError as error:
                 raise GraphNotFoundError() from error
         try:
-            return Graph.from_json(text)
+            data = json.loads(text)
+        except json.JSONDecodeError as error:
+            raise FreshdagsError(f"{GRAPH_FILE} is not valid JSON: {error}") from error
+        version = data.get("version") if isinstance(data, dict) else None
+        if not isinstance(version, int) or version < 1:
+            raise FreshdagsError(f"{GRAPH_FILE} has no valid version number.")
+        if version > GRAPH_VERSION:
+            raise UnsupportedVersionError(version, GRAPH_VERSION)
+        try:
+            return Graph.model_validate(upgrade(data))
         except ValidationError as error:
             raise FreshdagsError(f"{GRAPH_FILE} is invalid:\n{error}") from error
+
+    def _load_or_new(self) -> Graph:
+        return self._load() if self._graph_path.exists() else Graph()
 
     def _save(self, graph: Graph) -> None:
         self._graph_path.write_bytes(graph.to_json().encode("utf-8"))

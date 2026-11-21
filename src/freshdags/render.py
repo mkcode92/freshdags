@@ -2,7 +2,7 @@
 
 from itertools import groupby
 
-from freshdags.models import CheckReport, Drift, Graph, NodeView
+from freshdags.models import CheckReport, Drift, Graph, NodeView, Settings
 
 SHORT_SHA = 7
 
@@ -63,6 +63,14 @@ def render_graph(graph: Graph) -> str:
             lines.append(doc)
             lines.extend(f"  {source}" for source in node.depends_on)
     return "\n".join(lines) or "No dependencies yet. Add one with `freshdags add DOC SOURCE`."
+
+
+def render_settings(settings: Settings) -> str:
+    """One `name: value` line per setting."""
+    return "\n".join(
+        f"{name}: {value}"
+        for name, value in settings.model_dump(mode="json", by_alias=True).items()
+    )
 
 
 def render_node(view: NodeView) -> str:

@@ -6,13 +6,14 @@ exercise the methods directly.
 Node names are file paths relative to the repository root, or external names starting with
 `ext:`. Paths given by the caller are normalised: `./docs\\api.md` becomes `docs/api.md`.
 
-Every method except `add` raises GraphNotFoundError when freshdags.json does not exist.
+Every method except `add` and `configure` raises GraphNotFoundError when freshdags.json does
+not exist.
 All errors derive from freshdags.errors.FreshdagsError.
 """
 
 from abc import ABC, abstractmethod
 
-from freshdags.models import CheckReport, Graph, NodeView
+from freshdags.models import CheckReport, Graph, Mode, NodeView, Settings
 
 
 class FreshdagsApi(ABC):
@@ -43,6 +44,15 @@ class FreshdagsApi(ABC):
             UnknownEdgeError: one of the edges does not exist. The graph is left unchanged.
         """
 
+    @abstractmethod
+    def configure(
+        self, *, auto_flag: Mode | None = None, auto_resolve: Mode | None = None
+    ) -> Settings:
+        """Change the given settings and return all settings. With no arguments, only reads.
+
+        Creates freshdags.json with default settings if it does not exist.
+        """
+
     # --- reading the graph ------------------------------------------------------------------
 
     @abstractmethod
@@ -60,11 +70,18 @@ class FreshdagsApi(ABC):
     # --- drift ------------------------------------------------------------------------------
 
     @abstractmethod
-    def check(self, rev: str | None = None) -> CheckReport:
+    def check(self, rev: str | None = None, *, uncommitted: bool = False) -> CheckReport:
         """Find every doc that is older than one of its sources.
 
         Without `rev`, uses the current freshdags.json and, in `on-change` mode, the working
         tree. With `rev`, uses freshdags.json and the history as of that commit only.
+
+        `uncommitted` treats all uncommitted changes as one commit made now, also in
+        `on-commit` mode. That is what a pre-commit hook needs: it runs before the commit
+        exists. `off` stays off.
+
+        Raises:
+            FreshdagsError: `uncommitted` is combined with `rev`.
         """
 
     # Flags and resolves are scoped to nodes: a file goes stale, and a review covers all of

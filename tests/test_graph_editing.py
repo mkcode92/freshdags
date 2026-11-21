@@ -3,13 +3,16 @@
 import pytest
 from support import GitRepo
 
+from freshdags import models
 from freshdags.api import FreshdagsApi
 from freshdags.errors import (
     CycleError,
+    FreshdagsError,
     GraphNotFoundError,
     SelfDependencyError,
     UnknownEdgeError,
     UnknownFileError,
+    UnsupportedVersionError,
 )
 from freshdags.models import Edge, NodeView
 
@@ -22,7 +25,7 @@ def test_add_creates_graph_file_with_defaults(repo: GitRepo, fd: FreshdagsApi) -
 
     graph = repo.graph()
     assert graph["version"] == 1
-    assert graph["settings"] == {"flag": "on-commit", "resolve": "on-commit"}
+    assert graph["settings"] == {"auto-flag": "on-commit", "auto-resolve": "on-commit"}
     assert graph["nodes"]["docs/api.md"]["depends_on"] == ["src/api.py"]
     assert "src/api.py" in graph["nodes"]
 
@@ -150,6 +153,47 @@ def test_neighbours_lists_sources_and_dependents(repo: GitRepo, fd: FreshdagsApi
     assert fd.neighbours("docs/api.md") == NodeView(
         name="docs/api.md", sources=["src/api.py"], dependents=["docs/guide.md"]
     )
+
+
+def test_newer_file_version_is_refused(repo: GitRepo, fd: FreshdagsApi) -> None:
+    repo.write("freshdags.json", '{"version": 99, "nodes": {}}')
+
+    with pytest.raises(UnsupportedVersionError, match="version 99"):
+        fd.graph()
+
+
+def test_file_without_version_is_refused(repo: GitRepo, fd: FreshdagsApi) -> None:
+    repo.write("freshdags.json", '{"nodes": {}}')
+
+    with pytest.raises(FreshdagsError, match="version"):
+        fd.graph()
+
+
+def test_broken_json_is_reported(repo: GitRepo, fd: FreshdagsApi) -> None:
+    repo.write("freshdags.json", "{not json")
+
+    with pytest.raises(FreshdagsError, match="not valid JSON"):
+        fd.graph()
+
+
+def test_older_file_version_is_upgraded_on_read(
+    repo: GitRepo, fd: FreshdagsApi, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Pretend the format is at version 2, with an upgrade that renames a key."""
+    monkeypatch.setattr(models, "GRAPH_VERSION", 2)
+    monkeypatch.setattr("freshdags.core.GRAPH_VERSION", 2)
+    monkeypatch.setitem(
+        models.UPGRADES,
+        1,
+        lambda data: {"version": 1, "nodes": data["dependencies"]},
+    )
+    repo.write("docs/api.md")
+    repo.write("freshdags.json", '{"version": 1, "dependencies": {"docs/api.md": {}}}')
+
+    graph = fd.graph()
+
+    assert graph.version == 2
+    assert list(graph.nodes) == ["docs/api.md"]
 
 
 @pytest.mark.parametrize(

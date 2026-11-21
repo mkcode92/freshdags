@@ -1,7 +1,7 @@
 """`check`: a doc drifts when one of its sources changed after the doc was last up to date.
 
-Default settings are `flag: on-commit` and `resolve: on-commit`, so a commit to a source
-counts as a change and a commit to a doc counts as resolving it. A doc also counts as up to
+Default settings are `auto-flag: on-commit` and `auto-resolve: on-commit`, so a commit to a
+source counts as a change and a commit to a doc counts as resolving it. A doc also counts as up to
 date from the commit that created it. Times are commit author dates, which survive rebases.
 """
 
@@ -105,20 +105,20 @@ def test_change_ripples_through_doc_chain(repo: GitRepo, fd: FreshdagsApi) -> No
     assert fd.check().drifted_docs == ["docs/guide.md"]
 
 
-def test_manual_resolve_ignores_doc_commits(repo: GitRepo, fd: FreshdagsApi) -> None:
+def test_auto_resolve_off_ignores_doc_commits(repo: GitRepo, fd: FreshdagsApi) -> None:
     setup_api_doc(repo, fd)
-    repo.set_setting("resolve", "manual")
+    repo.set_setting("auto-resolve", "off")
     repo.commit({"src/api.py": "api v2"}, date=T2)
     repo.commit({"docs/api.md": "typo fix"}, date=T3)
 
     assert fd.check().drifted_docs == ["docs/api.md"]
 
 
-def test_manual_flag_ignores_source_commits(
+def test_auto_flag_off_ignores_source_commits(
     repo: GitRepo, fd: FreshdagsApi, time_machine: TimeMachineFixture
 ) -> None:
     setup_api_doc(repo, fd)
-    repo.set_setting("flag", "manual")
+    repo.set_setting("auto-flag", "off")
     repo.commit({"src/api.py": "refactor"}, date=T2)
 
     assert fd.check().ok
@@ -134,7 +134,7 @@ def test_doc_created_after_source_change_is_fresh(repo: GitRepo, fd: FreshdagsAp
     repo.commit({"src/api.py": "api v2"}, date=T2)
     repo.write("docs/api.md", "doc v1")
     fd.add("docs/api.md", "src/api.py")
-    repo.set_setting("resolve", "manual")
+    repo.set_setting("auto-resolve", "off")
     repo.commit(date=T3)
 
     assert fd.check().ok

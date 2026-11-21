@@ -12,8 +12,8 @@ from freshdags.api import FreshdagsApi
 
 def setup_modes(repo: GitRepo, fd: FreshdagsApi, *, flag: str, resolve: str) -> None:
     setup_api_doc(repo, fd)
-    repo.set_setting("flag", flag)
-    repo.set_setting("resolve", resolve)
+    repo.set_setting("auto-flag", flag)
+    repo.set_setting("auto-resolve", resolve)
     repo.commit(date=T1)
 
 

@@ -1,0 +1,10 @@
+# freshdags checks its own docs, using the working copy of the tool.
+repos:
+  - repo: local
+    hooks:
+      - id: freshdags
+        name: freshdags
+        entry: uv run freshdags check --uncommitted
+        language: system
+        pass_filenames: false
+        always_run: true
