@@ -1,163 +1,212 @@
-"""`add`, `rm` and `show`: maintaining the dependency graph in freshdags.json."""
+"""`add`, `rm`, `graph` and `neighbours`: maintaining the dependency graph in freshdags.json."""
 
-from conftest import Cli, GitRepo
+import pytest
+from support import GitRepo
+
+from freshdags import models
+from freshdags.api import FreshdagsApi
+from freshdags.errors import (
+    CycleError,
+    FreshdagsError,
+    GraphNotFoundError,
+    SelfDependencyError,
+    UnknownEdgeError,
+    UnknownFileError,
+    UnsupportedVersionError,
+)
+from freshdags.models import Edge, NodeView
 
 
-def test_add_creates_graph_file_with_defaults(repo: GitRepo, cli: Cli) -> None:
+def test_add_creates_graph_file_with_defaults(repo: GitRepo, fd: FreshdagsApi) -> None:
     repo.write("docs/api.md")
     repo.write("src/api.py")
 
-    result = cli("add", "docs/api.md", "src/api.py")
+    fd.add("docs/api.md", "src/api.py")
 
-    assert result.exit_code == 0, result.output
     graph = repo.graph()
     assert graph["version"] == 1
-    assert graph["settings"] == {"flag": "on-commit", "resolve": "on-commit"}
+    assert graph["settings"] == {"auto-flag": "on-commit", "auto-resolve": "on-commit"}
     assert graph["nodes"]["docs/api.md"]["depends_on"] == ["src/api.py"]
-    assert "src/api.py" in graph["nodes"]
+    assert "src/api.py" not in graph["nodes"], "sources appear only in depends_on"
 
 
-def test_add_several_sources_keeps_them_sorted(repo: GitRepo, cli: Cli) -> None:
+def test_add_several_sources_keeps_them_sorted(repo: GitRepo, fd: FreshdagsApi) -> None:
     for path in ("docs/api.md", "src/b.py", "src/a.py"):
         repo.write(path)
 
-    assert cli("add", "docs/api.md", "src/b.py", "src/a.py").exit_code == 0
+    fd.add("docs/api.md", "src/b.py", "src/a.py")
 
     assert repo.graph()["nodes"]["docs/api.md"]["depends_on"] == ["src/a.py", "src/b.py"]
 
 
-def test_add_is_idempotent(repo: GitRepo, cli: Cli) -> None:
+def test_add_is_idempotent(repo: GitRepo, fd: FreshdagsApi) -> None:
     repo.write("docs/api.md")
     repo.write("src/api.py")
-    cli("add", "docs/api.md", "src/api.py")
+    fd.add("docs/api.md", "src/api.py")
     before = repo.graph_text()
 
-    result = cli("add", "docs/api.md", "src/api.py")
+    fd.add("docs/api.md", "src/api.py")
 
-    assert result.exit_code == 0
     assert repo.graph_text() == before
 
 
-def test_graph_file_is_stable_and_sorted(repo: GitRepo, cli: Cli) -> None:
+def test_graph_file_is_stable_and_sorted(repo: GitRepo, fd: FreshdagsApi) -> None:
     for path in ("docs/z.md", "docs/a.md", "src/api.py"):
         repo.write(path)
-    cli("add", "docs/z.md", "src/api.py")
-    cli("add", "docs/a.md", "src/api.py")
+    fd.add("docs/z.md", "src/api.py")
+    fd.add("docs/a.md", "src/api.py")
 
     text = repo.graph_text()
 
-    assert text.index('"docs/a.md"') < text.index('"docs/z.md"') < text.index('"src/api.py"')
+    assert list(repo.graph()["nodes"]) == ["docs/a.md", "docs/z.md"]
     assert text.endswith("\n")
 
 
-def test_add_normalises_paths(repo: GitRepo, cli: Cli) -> None:
+def test_add_normalises_paths(repo: GitRepo, fd: FreshdagsApi) -> None:
     repo.write("docs/api.md")
     repo.write("src/api.py")
 
-    assert cli("add", "./docs/api.md", "src\\api.py").exit_code == 0
+    fd.add("./docs/api.md", "src\\api.py")
 
     assert repo.graph()["nodes"]["docs/api.md"]["depends_on"] == ["src/api.py"]
 
 
-def test_add_rejects_missing_file(repo: GitRepo, cli: Cli) -> None:
+def test_add_rejects_missing_file(repo: GitRepo, fd: FreshdagsApi) -> None:
     repo.write("docs/api.md")
 
-    result = cli("add", "docs/api.md", "src/typo.py")
-
-    assert result.exit_code == 2
-    assert "src/typo.py" in result.output
+    with pytest.raises(UnknownFileError, match="src/typo.py"):
+        fd.add("docs/api.md", "src/typo.py")
 
 
-def test_add_accepts_external_nodes_without_file(repo: GitRepo, cli: Cli) -> None:
+def test_add_accepts_external_nodes_without_file(repo: GitRepo, fd: FreshdagsApi) -> None:
     repo.write("docs/api.md")
     repo.write("src/api.py")
 
-    assert cli("add", "docs/api.md", "ext:stripe-api").exit_code == 0
-    assert cli("add", "ext:wiki-api-page", "src/api.py").exit_code == 0
+    fd.add("docs/api.md", "ext:stripe-api")
+    fd.add("ext:wiki-api-page", "src/api.py")
 
-    nodes = repo.graph()["nodes"]
-    assert nodes["ext:stripe-api"]["external"] is True
-    assert nodes["ext:wiki-api-page"]["external"] is True
-    assert "external" not in nodes["docs/api.md"]
+    assert repo.graph()["nodes"]["ext:wiki-api-page"] == {"depends_on": ["src/api.py"]}
+    assert "ext:stripe-api" in fd.graph().nodes
 
 
-def test_add_rejects_self_dependency(repo: GitRepo, cli: Cli) -> None:
+def test_add_rejects_self_dependency(repo: GitRepo, fd: FreshdagsApi) -> None:
     repo.write("docs/api.md")
 
-    result = cli("add", "docs/api.md", "docs/api.md")
-
-    assert result.exit_code == 2
-    assert "docs/api.md" in result.output
+    with pytest.raises(SelfDependencyError, match="docs/api.md"):
+        fd.add("docs/api.md", "docs/api.md")
 
 
-def test_add_rejects_cycle_and_leaves_graph_unchanged(repo: GitRepo, cli: Cli) -> None:
+def test_add_rejects_cycle_and_leaves_graph_unchanged(repo: GitRepo, fd: FreshdagsApi) -> None:
     for path in ("a.md", "b.md", "c.md"):
         repo.write(path)
-    cli("add", "a.md", "b.md")
-    cli("add", "b.md", "c.md")
+    fd.add("a.md", "b.md")
+    fd.add("b.md", "c.md")
     before = repo.graph_text()
 
-    result = cli("add", "c.md", "a.md")
+    with pytest.raises(CycleError):
+        fd.add("c.md", "a.md")
 
-    assert result.exit_code == 2
-    assert "cycle" in result.output.lower()
     assert repo.graph_text() == before
 
 
-def test_rm_removes_edge_and_prunes_orphans(repo: GitRepo, cli: Cli) -> None:
+def test_rm_removes_edge_and_prunes_orphans(repo: GitRepo, fd: FreshdagsApi) -> None:
     for path in ("docs/api.md", "src/a.py", "src/b.py"):
         repo.write(path)
-    cli("add", "docs/api.md", "src/a.py", "src/b.py")
+    fd.add("docs/api.md", "src/a.py", "src/b.py")
 
-    result = cli("rm", "docs/api.md", "src/a.py")
+    fd.rm("docs/api.md", "src/a.py")
 
-    assert result.exit_code == 0, result.output
     nodes = repo.graph()["nodes"]
     assert nodes["docs/api.md"]["depends_on"] == ["src/b.py"]
     assert "src/a.py" not in nodes
 
 
-def test_rm_unknown_edge_fails(repo: GitRepo, cli: Cli) -> None:
+def test_rm_unknown_edge_fails(repo: GitRepo, fd: FreshdagsApi) -> None:
     for path in ("docs/api.md", "src/a.py", "src/b.py"):
         repo.write(path)
-    cli("add", "docs/api.md", "src/a.py")
+    fd.add("docs/api.md", "src/a.py")
 
-    result = cli("rm", "docs/api.md", "src/b.py")
-
-    assert result.exit_code == 2
-    assert "src/b.py" in result.output
+    with pytest.raises(UnknownEdgeError, match="src/b.py"):
+        fd.rm("docs/api.md", "src/b.py")
 
 
-def test_show_lists_dependencies(repo: GitRepo, cli: Cli) -> None:
+def test_graph_lists_dependencies(repo: GitRepo, fd: FreshdagsApi) -> None:
     for path in ("docs/api.md", "docs/guide.md", "src/api.py"):
         repo.write(path)
-    cli("add", "docs/api.md", "src/api.py")
-    cli("add", "docs/guide.md", "docs/api.md")
+    fd.add("docs/api.md", "src/api.py")
+    fd.add("docs/guide.md", "docs/api.md")
 
-    result = cli("show")
+    assert fd.graph().edges() == [
+        Edge(doc="docs/api.md", source="src/api.py"),
+        Edge(doc="docs/guide.md", source="docs/api.md"),
+    ]
 
-    assert result.exit_code == 0
-    for name in ("docs/api.md", "docs/guide.md", "src/api.py"):
-        assert name in result.output
 
-
-def test_show_node_lists_sources_and_dependents(repo: GitRepo, cli: Cli) -> None:
+def test_neighbours_lists_sources_and_dependents(repo: GitRepo, fd: FreshdagsApi) -> None:
     for path in ("docs/api.md", "docs/guide.md", "src/api.py", "src/other.py"):
         repo.write(path)
-    cli("add", "docs/api.md", "src/api.py")
-    cli("add", "docs/guide.md", "docs/api.md")
-    cli("add", "docs/guide.md", "src/other.py")
+    fd.add("docs/api.md", "src/api.py")
+    fd.add("docs/guide.md", "docs/api.md", "src/other.py")
 
-    result = cli("show", "docs/api.md")
-
-    assert result.exit_code == 0
-    assert "src/api.py" in result.output
-    assert "docs/guide.md" in result.output
-    assert "src/other.py" not in result.output
+    assert fd.neighbours("docs/api.md") == NodeView(
+        name="docs/api.md", sources=["src/api.py"], dependents=["docs/guide.md"]
+    )
 
 
-def test_commands_fail_cleanly_without_graph_file(repo: GitRepo, cli: Cli) -> None:
-    for args in (("show",), ("check",), ("rm", "a", "b"), ("resolve", "a"), ("flag", "a")):
-        result = cli(*args)
-        assert result.exit_code == 2, args
-        assert "freshdags.json" in result.output, args
+def test_newer_file_version_is_refused(repo: GitRepo, fd: FreshdagsApi) -> None:
+    repo.write("freshdags.json", '{"version": 99, "nodes": {}}')
+
+    with pytest.raises(UnsupportedVersionError, match="version 99"):
+        fd.graph()
+
+
+def test_file_without_version_is_refused(repo: GitRepo, fd: FreshdagsApi) -> None:
+    repo.write("freshdags.json", '{"nodes": {}}')
+
+    with pytest.raises(FreshdagsError, match="version"):
+        fd.graph()
+
+
+def test_broken_json_is_reported(repo: GitRepo, fd: FreshdagsApi) -> None:
+    repo.write("freshdags.json", "{not json")
+
+    with pytest.raises(FreshdagsError, match="not valid JSON"):
+        fd.graph()
+
+
+def test_older_file_version_is_upgraded_on_read(
+    repo: GitRepo, fd: FreshdagsApi, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Pretend the format is at version 2, with an upgrade that renames a key."""
+    monkeypatch.setattr(models, "GRAPH_VERSION", 2)
+    monkeypatch.setattr("freshdags.core.GRAPH_VERSION", 2)
+    monkeypatch.setitem(
+        models.UPGRADES,
+        1,
+        lambda data: {"version": 1, "nodes": data["dependencies"]},
+    )
+    repo.write("docs/api.md")
+    repo.write("freshdags.json", '{"version": 1, "dependencies": {"docs/api.md": {}}}')
+
+    graph = fd.graph()
+
+    assert graph.version == 2
+    assert list(graph.nodes) == ["docs/api.md"]
+
+
+@pytest.mark.parametrize(
+    "call",
+    [
+        lambda fd: fd.graph(),
+        lambda fd: fd.neighbours("a"),
+        lambda fd: fd.check(),
+        lambda fd: fd.rm("a", "b"),
+        lambda fd: fd.resolve("a"),
+        lambda fd: fd.resolve_all(),
+        lambda fd: fd.flag("a"),
+    ],
+    ids=["graph", "neighbours", "check", "rm", "resolve", "resolve_all", "flag"],
+)
+def test_methods_fail_cleanly_without_graph_file(repo: GitRepo, fd: FreshdagsApi, call) -> None:
+    with pytest.raises(GraphNotFoundError, match="freshdags.json"):
+        call(fd)

@@ -3,11 +3,14 @@ name = "freshdags"
 version = "0.1.0"
 description = "Track dependencies between docs and the code they describe, and flag documentation drift."
 readme = "Readme.md"
+license = "MIT"
+license-files = ["LICENSE"]
 authors = [
     { name = "Markus Kobold", email = "mkcode92@gmail.com" }
 ]
 requires-python = ">=3.12"
 dependencies = [
+    "pydantic>=2.14.3",
     "typer>=0.29.2",
 ]
 keywords = ["documentation", "drift", "dag", "git", "cli", "agents"]
@@ -17,8 +20,14 @@ classifiers = [
     "Intended Audience :: Developers",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "Topic :: Software Development :: Documentation",
 ]
+
+[project.urls]
+Homepage = "https://github.com/mkcode92/freshdags"
+Repository = "https://github.com/mkcode92/freshdags"
+Issues = "https://github.com/mkcode92/freshdags/issues"
 
 [project.scripts]
 freshdags = "freshdags.cli:app"
@@ -29,8 +38,10 @@ build-backend = "uv_build"
 
 [dependency-groups]
 dev = [
+    "pre-commit>=4.7.0",
     "pytest>=9.2.0",
     "ruff>=0.17.5",
+    "time-machine>=3.6.0",
 ]
 
 [tool.ruff]
