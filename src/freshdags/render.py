@@ -16,7 +16,7 @@ def render_check(report: CheckReport) -> str:
     """
     blocks = []
     for doc, drifts in groupby(report.drift, key=lambda d: d.doc):
-        lines = [f"{doc} drifted"]
+        lines = [f"{doc} may have drifted"]
         for drift in drifts:
             lines.extend(_describe(drift, report.rev))
         lines.append(f"  then: update {doc}, or run: freshdags resolve {doc}")
@@ -43,7 +43,7 @@ def _describe(drift: Drift, rev: str | None) -> list[str]:
 def _summary(report: CheckReport) -> str:
     if not report.ok:
         count = len(report.drifted_docs)
-        return f"🦡 {count} {_docs(count)} drifted. The badger is watching."
+        return f"🦡 {count} {_docs(count)} may have drifted. The badger is watching."
     if report.docs_checked == 0:
         return "🦡✨ Nothing to check yet. Add a dependency with `freshdags add DOC SOURCE`."
     if report.docs_checked == 1:
