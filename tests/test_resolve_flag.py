@@ -48,6 +48,18 @@ def test_resolve_is_overtaken_by_later_source_change(
     assert not fd.check().ok
 
 
+def test_source_commit_right_after_resolve_flags(
+    repo: GitRepo, fd: FreshdagsApi, time_machine: TimeMachineFixture
+) -> None:
+    """Resolve and the next commit fall into the same second."""
+    setup_api_doc(repo, fd)
+    time_machine.move_to("2026-01-02T10:00:00.700+00:00", tick=False)
+    fd.resolve("docs/api.md")
+    repo.commit({"src/api.py": "api v2"}, date=T2)
+
+    assert fd.check().drifted_docs == ["docs/api.md"]
+
+
 def test_resolve_several_docs(
     repo: GitRepo, fd: FreshdagsApi, time_machine: TimeMachineFixture
 ) -> None:

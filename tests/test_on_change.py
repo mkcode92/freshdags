@@ -63,7 +63,7 @@ def test_on_change_ignores_mtime_of_unmodified_files(repo: GitRepo, fd: Freshdag
     assert fd.check().ok
 
 
-def test_on_change_counts_new_untracked_source(repo: GitRepo, fd: FreshdagsApi) -> None:
+def test_on_change_counts_new_staged_source(repo: GitRepo, fd: FreshdagsApi) -> None:
     setup_modes(repo, fd, flag="on-change", resolve="on-change")
     repo.save("src/extra.py", "new", at=T2)
     fd.add("docs/api.md", "src/extra.py")
