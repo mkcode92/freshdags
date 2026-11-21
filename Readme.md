@@ -27,12 +27,12 @@ Later, someone changes `src/api/interface.py` and commits. Now:
 
 ```sh
 $ freshdags check
-docs/api.md drifted
+docs/api.md may have drifted
   src/api/interface.py changed since 3f2a91c
     review: git diff 3f2a91c..HEAD -- src/api/interface.py
   then: update docs/api.md, or run: freshdags resolve docs/api.md
 
-🦡 1 doc drifted. The badger is watching.
+🦡 1 doc may have drifted. The badger is watching.
 ```
 
 Read the diff, then either:
@@ -114,7 +114,7 @@ The hook runs `freshdags check --uncommitted`: the changes you are committing co
 | `freshdags add DOC SOURCE...` | Record that DOC depends on each SOURCE. Creates `freshdags.json` if needed. Refuses missing or untracked files, self-dependencies and cycles. |
 | `freshdags rm DOC SOURCE...` | Remove those dependencies, and nodes no longer connected to anything. |
 | `freshdags show [NODE]` | Print the graph, or one node's sources and dependents. |
-| `freshdags check [REV] [--json] [--uncommitted]` | List every drifted doc. Without `REV`, uses the current `freshdags.json`, the history up to `HEAD` and, in `on-change` mode, uncommitted changes; with `REV`, evaluates the graph as of that commit. `--uncommitted` counts uncommitted changes as a commit made now, for pre-commit hooks. |
+| `freshdags check [REV] [--json] [--uncommitted]` | List every doc that may have drifted. Without `REV`, uses the current `freshdags.json`, the history up to `HEAD` and, in `on-change` mode, uncommitted changes; with `REV`, evaluates the graph as of that commit. `--uncommitted` counts uncommitted changes as a commit made now, for pre-commit hooks. |
 | `freshdags resolve DOC...` | Mark docs as drift-free after reviewing them. |
 | `freshdags resolve --all` | Resolve every drifted doc, when the change needed no doc update. |
 | `freshdags flag NODE [--note TEXT]` | Record that a source changed, flagging the docs that depend on it. |

@@ -125,4 +125,4 @@ def test_render_summary_when_fresh() -> None:
 def test_render_summary_counts_drifted_docs() -> None:
     report = CheckReport(rev=None, docs_checked=3, drift=[drift(), drift(source="src/b.py")])
 
-    assert "🦡 1 doc drifted" in render_check(report)
+    assert "🦡 1 doc may have drifted" in render_check(report)
