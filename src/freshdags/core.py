@@ -114,7 +114,7 @@ class Freshdags(FreshdagsApi):
                 raise CycleError([doc, *cycle])
 
         for name in (doc, *names):
-            graph.nodes.setdefault(name, Node(external=is_external(name)))
+            graph.nodes.setdefault(name, Node())
         node = graph.nodes[doc]
         node.depends_on = Node(depends_on=[*node.depends_on, *names]).depends_on
         self._save(graph)

@@ -147,7 +147,7 @@ freshdags keeps your dependencies as a graph (a DAG) in `freshdags.json`. The ru
 
 ### The graph file
 
-`freshdags.json` is written by the tool; you should not need to edit it by hand. Keys are sorted so diffs stay small. Only the latest `resolved` and `flagged` record per node is kept; git holds the history.
+`freshdags.json` is written by the tool; you should not need to edit it by hand. Keys are sorted so diffs stay small. A source appears only in `depends_on` lists, unless it carries a `flagged` record. Only the latest `resolved` and `flagged` record per node is kept; git holds the history.
 
 ```json
 {
@@ -157,10 +157,8 @@ freshdags keeps your dependencies as a graph (a DAG) in `freshdags.json`. The ru
       "resolved": { "at": "2026-11-19T10:00:00Z", "by": "Jane Doe", "commit": "3f2a91c..." }
     },
     "ext:stripe-api": {
-      "external": true,
       "flagged": { "at": "2026-11-01T00:00:00Z", "by": "Jane Doe", "note": "API v2 released" }
-    },
-    "src/api/interface.py": {}
+    }
   },
   "settings": { "auto-flag": "on-commit", "auto-resolve": "on-commit" },
   "version": 1

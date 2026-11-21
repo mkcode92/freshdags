@@ -27,7 +27,7 @@ def test_add_creates_graph_file_with_defaults(repo: GitRepo, fd: FreshdagsApi) -
     assert graph["version"] == 1
     assert graph["settings"] == {"auto-flag": "on-commit", "auto-resolve": "on-commit"}
     assert graph["nodes"]["docs/api.md"]["depends_on"] == ["src/api.py"]
-    assert "src/api.py" in graph["nodes"]
+    assert "src/api.py" not in graph["nodes"], "sources appear only in depends_on"
 
 
 def test_add_several_sources_keeps_them_sorted(repo: GitRepo, fd: FreshdagsApi) -> None:
@@ -58,7 +58,7 @@ def test_graph_file_is_stable_and_sorted(repo: GitRepo, fd: FreshdagsApi) -> Non
 
     text = repo.graph_text()
 
-    assert list(repo.graph()["nodes"]) == ["docs/a.md", "docs/z.md", "src/api.py"]
+    assert list(repo.graph()["nodes"]) == ["docs/a.md", "docs/z.md"]
     assert text.endswith("\n")
 
 
@@ -85,10 +85,8 @@ def test_add_accepts_external_nodes_without_file(repo: GitRepo, fd: FreshdagsApi
     fd.add("docs/api.md", "ext:stripe-api")
     fd.add("ext:wiki-api-page", "src/api.py")
 
-    nodes = repo.graph()["nodes"]
-    assert nodes["ext:stripe-api"]["external"] is True
-    assert nodes["ext:wiki-api-page"]["external"] is True
-    assert "external" not in nodes["docs/api.md"]
+    assert repo.graph()["nodes"]["ext:wiki-api-page"] == {"depends_on": ["src/api.py"]}
+    assert "ext:stripe-api" in fd.graph().nodes
 
 
 def test_add_rejects_self_dependency(repo: GitRepo, fd: FreshdagsApi) -> None:

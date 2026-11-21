@@ -5,7 +5,7 @@ from collections.abc import Callable
 from enum import StrEnum
 from typing import Any, Self
 
-from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, field_validator
+from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, field_validator, model_validator
 
 GRAPH_FILE = "freshdags.json"
 EXTERNAL_PREFIX = "ext:"
@@ -84,15 +84,14 @@ class Flag(Record):
 class Node(BaseModel):
     """A file path relative to the repository root, or an external `ext:<name>`.
 
-    Flags and resolves are scoped to nodes: a file goes stale, and a review covers all of
-    its sources at once.
+    Whether a node is external follows from its name (see `is_external`). Flags and resolves
+    are scoped to nodes: a file goes stale, and a review covers all of its sources at once.
     """
 
     model_config = ConfigDict(extra="forbid")
 
     depends_on: list[str] = []
     """Sources this node depends on, sorted and unique."""
-    external: bool = False
     resolved: Resolution | None = None
     """Last `freshdags resolve` of this node as a doc."""
     flagged: Flag | None = None
@@ -114,13 +113,25 @@ class Edge(BaseModel):
 
 
 class Graph(BaseModel):
-    """Contents of freshdags.json."""
+    """Contents of freshdags.json.
+
+    The file lists only nodes that carry something: sources a doc depends on, or a record.
+    Every source named in a `depends_on` list gets a node when the file is read, so `nodes`
+    always holds the whole graph.
+    """
 
     model_config = ConfigDict(extra="forbid")
 
     version: int = GRAPH_VERSION
     settings: Settings = Settings()
     nodes: dict[str, Node] = {}
+
+    @model_validator(mode="after")
+    def _add_implicit_sources(self) -> Self:
+        for node in list(self.nodes.values()):
+            for source in node.depends_on:
+                self.nodes.setdefault(source, Node())
+        return self
 
     def edges(self) -> list[Edge]:
         """All edges, sorted by doc, then source."""
@@ -137,15 +148,16 @@ class Graph(BaseModel):
     def to_json(self) -> str:
         """Stable, diff-friendly JSON: sorted keys, two-space indent, trailing newline.
 
-        Settings are always written in full; node fields are written only when they differ
-        from their defaults.
+        Settings are always written in full. Node fields are written only when they differ
+        from their defaults, and nodes left empty that way are omitted.
         """
         data = {
             "version": self.version,
             "settings": self.settings.model_dump(mode="json", by_alias=True),
             "nodes": {
-                name: node.model_dump(mode="json", exclude_defaults=True)
+                name: fields
                 for name, node in self.nodes.items()
+                if (fields := node.model_dump(mode="json", exclude_defaults=True))
             },
         }
         return json.dumps(data, indent=2, sort_keys=True, ensure_ascii=False) + "\n"
