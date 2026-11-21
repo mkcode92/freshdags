@@ -4,7 +4,8 @@
       "depends_on": [
         "src/freshdags/api.py",
         "src/freshdags/cli.py",
-        "src/freshdags/models.py"
+        "src/freshdags/models.py",
+        "src/freshdags/render.py"
       ]
     }
   },
