@@ -2,7 +2,7 @@
 
 A small CLI that helps prevent documentation drift — especially in codebases where agents change code faster than anyone re-reads the docs. It works just as well for keeping any file consistent with the specs and invariants it depends on.
 
-> **Status:** early. All commands below work, but nothing is released yet and the file format may still change.
+> **Status:** early. All commands below work, but the file format may still change. Until v0.1.0 is on PyPI, install from GitHub (see below); the pre-commit and CI snippets need that release.
 
 ## Install
 
@@ -14,7 +14,7 @@ Until the first release on PyPI, install from GitHub instead: `uv tool install g
 
 ## Quick start
 
-Tell freshdags which docs depend on which files:
+Tell freshdags which docs depend on which files. They must be tracked by git; `git add` new files first:
 
 ```sh
 freshdags add docs/api.md src/api/interface.py
@@ -102,7 +102,7 @@ The hook runs `freshdags check --uncommitted`: the changes you are committing co
 - tests depend on the interface they pin down;
 - a migration or config depends on the model it mirrors.
 
-**Things outside the repository** are written as `ext:<name>`:
+**Things outside the repository** are written as `ext:<name>`. They are the only nodes without a tracked file:
 
 - **External doc**, e.g. a wiki page that describes repo code: a code change flags it. After updating the page, run `freshdags resolve ext:wiki-api`. Resolve it once right after adding it, since it has no commits.
 - **External source**, e.g. a vendor API: freshdags cannot see it change, so run `freshdags flag ext:stripe-api` when it does.
@@ -111,10 +111,10 @@ The hook runs `freshdags check --uncommitted`: the changes you are committing co
 
 | Command | Purpose |
 |---|---|
-| `freshdags add DOC SOURCE...` | Record that DOC depends on each SOURCE. Creates `freshdags.json` if needed. Refuses missing files, self-dependencies and cycles. |
-| `freshdags rm DOC SOURCE...` | Remove those dependencies. Nodes left without any dependency are removed. |
+| `freshdags add DOC SOURCE...` | Record that DOC depends on each SOURCE. Creates `freshdags.json` if needed. Refuses missing or untracked files, self-dependencies and cycles. |
+| `freshdags rm DOC SOURCE...` | Remove those dependencies, and nodes no longer connected to anything. |
 | `freshdags show [NODE]` | Print the graph, or one node's sources and dependents. |
-| `freshdags check [REV] [--json] [--uncommitted]` | List every drifted doc. Without `REV`, uses the current `freshdags.json` and working tree; with `REV`, evaluates the graph as of that commit. `--uncommitted` counts uncommitted changes as a commit made now, for pre-commit hooks. |
+| `freshdags check [REV] [--json] [--uncommitted]` | List every drifted doc. Without `REV`, uses the current `freshdags.json`, the history up to `HEAD` and, in `on-change` mode, uncommitted changes; with `REV`, evaluates the graph as of that commit. `--uncommitted` counts uncommitted changes as a commit made now, for pre-commit hooks. |
 | `freshdags resolve DOC...` | Mark docs as drift-free after reviewing them. |
 | `freshdags resolve --all` | Resolve every drifted doc, when the change needed no doc update. |
 | `freshdags flag NODE [--note TEXT]` | Record that a source changed, flagging the docs that depend on it. |
@@ -122,7 +122,7 @@ The hook runs `freshdags check --uncommitted`: the changes you are committing co
 
 **Exit codes:** `0` no drift, `1` drift found, `2` usage or graph-file error.
 
-**Verbosity:** by default, commands print only their results (the `check` report, `show`) and errors. `-v` adds confirmations such as "docs/api.md depends on src/api.py"; `-vv` adds diagnostics like the git commands run. `-q` prints nothing but errors, for hooks and CI that only need the exit code. Confirmations and diagnostics go to stderr, so `--json` output stays clean.
+**Verbosity:** by default, commands print only their results (the `check` report, `show`) and errors. The options go before the command, as in `freshdags -q check`. `-v` adds confirmations such as "docs/api.md depends on src/api.py"; `-vv` adds diagnostics like the git commands run. `-q` prints nothing but errors, for hooks and CI that only need the exit code. Confirmations and diagnostics go to stderr, so `--json` output stays clean.
 
 ## Settings
 
@@ -142,7 +142,7 @@ Settings live in `freshdags.json`. Show them with `freshdags configure`, change 
 freshdags keeps your dependencies as a graph (a DAG) in `freshdags.json`. The rule is: **a doc must be at least as new as each of its sources.** If a source changed after the doc was last up to date, the doc is flagged until someone resolves it.
 
 - **Times come from git:** a file's change time is the **author date** of the last commit that touched it. Author dates survive rebases, so rewriting a branch does not raise false flags. Because commits are the source of truth, a doc can be updated in a later commit of the same pull request.
-- **A doc is up to date** from the commit that created it, from its last commit (with `auto-resolve: on-commit`), or from its last `resolve` — whichever is latest. The `git diff` hint in `check` starts at that commit.
+- **A doc is up to date** from the commit that created it, from its last commit or save (as `auto-resolve` allows), or from its last `resolve` — whichever is latest. The `git diff` hint in `check` starts at that commit.
 - **Changes ripple, resolves do not.** A real change to a doc flags the docs that depend on it. Resolving a doc only states that it is still correct, so its dependents stay as they are.
 
 ### The graph file

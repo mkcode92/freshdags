@@ -19,6 +19,7 @@ from freshdags.errors import (
     UnknownFileError,
     UnknownNodeError,
     UnsupportedVersionError,
+    UntrackedFileError,
 )
 from freshdags.git import Git, GitError
 from freshdags.models import (
@@ -104,9 +105,14 @@ class Freshdags(FreshdagsApi):
         graph = self._load_or_new()
         doc = self._normalise(doc)
         names = [self._normalise(source) for source in sources]
-        for name in (doc, *names):
-            if not is_external(name) and not (self.root / name).is_file():
+        files = [name for name in (doc, *names) if not is_external(name)]
+        for name in files:
+            if not (self.root / name).is_file():
                 raise UnknownFileError(name)
+        tracked = self._tracked(files)
+        for name in files:
+            if name not in tracked:
+                raise UntrackedFileError(name)
         if doc in names:
             raise SelfDependencyError(doc)
         for source in names:
@@ -182,7 +188,7 @@ class Freshdags(FreshdagsApi):
             fresh = self._fresh(doc, node, history, settings.auto_resolve)
             for source in node.depends_on:
                 changed = self._changed(source, graph.nodes[source], history, settings.auto_flag)
-                if changed is None or (fresh is not None and changed.at <= fresh.at):
+                if changed is None or not self._is_newer(changed, fresh):
                     continue
                 drift.append(
                     Drift(
@@ -272,16 +278,14 @@ class Freshdags(FreshdagsApi):
         return History(last=last, first=first, saved=saved)
 
     def _saved(self, paths: list[str], at: datetime | None) -> dict[str, Moment]:
-        """Uncommitted changes (modified or untracked) among `paths`.
+        """Uncommitted changes to tracked files among `paths`, staged or not.
 
         Timed by file modification time, or all at `at` when given: then they count as one
         pending commit, so their order does not matter.
 
         Asks for the whole working tree and filters here, so the command line stays short.
         """
-        status = self.git.run(
-            "status", "--porcelain=v1", "-z", "--untracked-files=all", strip=False
-        )
+        status = self.git.run("status", "--porcelain=v1", "-z", "--untracked-files=no", strip=False)
         wanted = set(paths)
         entries = iter(status.split("\0"))
         saved = {}
@@ -295,6 +299,32 @@ class Freshdags(FreshdagsApi):
             if path in wanted and file.is_file():
                 saved[path] = Moment(at or datetime.fromtimestamp(file.stat().st_mtime, UTC))
         return saved
+
+    def _is_newer(self, changed: Moment, fresh: Moment | None) -> bool:
+        """Whether `changed` happened after `fresh`.
+
+        git dates have one-second resolution, so commits made within the same second tie.
+        Then the history decides: a commit that descends from the other is the newer one.
+        """
+        if fresh is None or changed.at != fresh.at:
+            return fresh is None or changed.at > fresh.at
+        if changed.commit is None or fresh.commit is None or changed.commit == fresh.commit:
+            return False
+        try:
+            self.git.run("merge-base", "--is-ancestor", fresh.commit, changed.commit)
+        except GitError:
+            return False
+        return True
+
+    def _tracked(self, paths: list[str]) -> set[str]:
+        """The subset of `paths` that git tracks (committed or staged)."""
+        if not paths:
+            return set()
+        listed = self.git.run(
+            "-c", "core.quotepath=off", "--literal-pathspecs", "ls-files", "-z", "--", *paths,
+            strip=False,
+        )  # fmt: skip
+        return set(listed.split("\0")) - {""}
 
     def _head(self) -> str | None:
         try:
@@ -310,7 +340,8 @@ class Freshdags(FreshdagsApi):
 
     @staticmethod
     def _now() -> datetime:
-        return datetime.now(UTC)
+        """Whole seconds, like git dates, so records and commits compare cleanly."""
+        return datetime.now(UTC).replace(microsecond=0)
 
     # --- graph file -------------------------------------------------------------------------
 

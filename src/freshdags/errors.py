@@ -18,6 +18,15 @@ class UnknownFileError(FreshdagsError):
         self.path = path
 
 
+class UntrackedFileError(FreshdagsError):
+    def __init__(self, path: str) -> None:
+        super().__init__(
+            f"Not tracked by git: {path}. Stage it with `git add` first; for things outside "
+            "the repository, use an ext: name."
+        )
+        self.path = path
+
+
 class UnknownNodeError(FreshdagsError):
     def __init__(self, node: str) -> None:
         super().__init__(f"Not in the graph: {node}")

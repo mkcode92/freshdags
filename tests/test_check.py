@@ -51,6 +51,22 @@ def test_rebase_does_not_flag(repo: GitRepo, fd: FreshdagsApi) -> None:
     assert fd.check().ok
 
 
+def test_change_within_the_same_second_still_flags(repo: GitRepo, fd: FreshdagsApi) -> None:
+    """git dates have one-second resolution; scripts and agents commit faster than that."""
+    setup_api_doc(repo, fd)
+    repo.commit({"src/api.py": "api v2"}, date=T1)
+
+    assert fd.check().drifted_docs == ["docs/api.md"]
+
+
+def test_doc_update_within_the_same_second_resolves(repo: GitRepo, fd: FreshdagsApi) -> None:
+    setup_api_doc(repo, fd)
+    repo.commit({"src/api.py": "api v2"}, date=T2)
+    repo.commit({"docs/api.md": "doc v2"}, date=T2)
+
+    assert fd.check().ok
+
+
 def test_check_at_revision(repo: GitRepo, fd: FreshdagsApi) -> None:
     clean = setup_api_doc(repo, fd)
     repo.commit({"src/api.py": "api v2"}, date=T2)

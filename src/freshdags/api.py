@@ -30,6 +30,8 @@ class FreshdagsApi(ABC):
 
         Raises:
             UnknownFileError: a non-external node is not an existing file.
+            UntrackedFileError: a non-external node is not tracked by git. Only tracked
+                files can be checked; everything else must be an `ext:` node.
             SelfDependencyError: `doc` is among `sources`.
             CycleError: an edge would close a cycle. The graph is left unchanged.
         """

@@ -13,6 +13,7 @@ from freshdags.errors import (
     UnknownEdgeError,
     UnknownFileError,
     UnsupportedVersionError,
+    UntrackedFileError,
 )
 from freshdags.models import Edge, NodeView
 
@@ -76,6 +77,15 @@ def test_add_rejects_missing_file(repo: GitRepo, fd: FreshdagsApi) -> None:
 
     with pytest.raises(UnknownFileError, match="src/typo.py"):
         fd.add("docs/api.md", "src/typo.py")
+
+
+def test_add_rejects_untracked_file(repo: GitRepo, fd: FreshdagsApi) -> None:
+    """Only files git tracks can be checked; anything else must be an ext: node."""
+    repo.write("docs/api.md")
+    repo.write("src/scratch.py", stage=False)
+
+    with pytest.raises(UntrackedFileError, match="src/scratch.py"):
+        fd.add("docs/api.md", "src/scratch.py")
 
 
 def test_add_accepts_external_nodes_without_file(repo: GitRepo, fd: FreshdagsApi) -> None:
