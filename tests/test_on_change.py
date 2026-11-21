@@ -4,7 +4,8 @@
 revision; `check(rev)` evaluates committed history only.
 """
 
-from support import T1, T2, T3, Clock, GitRepo, setup_api_doc
+from support import T1, T2, T3, GitRepo, setup_api_doc
+from time_machine import TimeMachineFixture
 
 from freshdags.api import FreshdagsApi
 
@@ -81,12 +82,12 @@ def test_saving_child_doc_flags_parent(repo: GitRepo, fd: FreshdagsApi) -> None:
 
 
 def test_resolve_command_does_not_flag_parent(
-    repo: GitRepo, fd: FreshdagsApi, clock: Clock
+    repo: GitRepo, fd: FreshdagsApi, time_machine: TimeMachineFixture
 ) -> None:
     setup_modes(repo, fd, flag="on-change", resolve="on-change")
     add_readme_over_api_doc(repo, fd)
     repo.save("src/api.py", "api v2", at=T2)
-    clock.set(T3)
+    time_machine.move_to(T3, tick=False)
 
     fd.resolve("docs/api.md")
 

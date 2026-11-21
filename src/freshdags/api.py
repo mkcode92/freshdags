@@ -94,7 +94,3 @@ class FreshdagsApi(ABC):
         Raises:
             UnknownNodeError: `node` is not in the graph.
         """
-
-
-class Freshdags(FreshdagsApi):
-    pass

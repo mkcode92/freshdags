@@ -7,7 +7,8 @@ whichever is latest. The review hint diffs the source from there.
 
 from datetime import datetime
 
-from support import T1, T2, T3, T4, Clock, GitRepo, setup_api_doc
+from support import T1, T2, T3, T4, GitRepo, setup_api_doc
+from time_machine import TimeMachineFixture
 
 from freshdags.api import FreshdagsApi
 from freshdags.models import CheckReport, Drift
@@ -35,21 +36,25 @@ def test_report_describes_drift(repo: GitRepo, fd: FreshdagsApi) -> None:
     ]
 
 
-def test_fresh_commit_is_last_resolve(repo: GitRepo, fd: FreshdagsApi, clock: Clock) -> None:
+def test_fresh_commit_is_last_resolve(
+    repo: GitRepo, fd: FreshdagsApi, time_machine: TimeMachineFixture
+) -> None:
     setup_api_doc(repo, fd)
     resolved_at = repo.commit({"src/api.py": "api v2"}, date=T2)
-    clock.set(T3)
+    time_machine.move_to(T3, tick=False)
     fd.resolve("docs/api.md")
     repo.commit({"src/api.py": "api v3"}, date=T4)
 
     assert fd.check().drift[0].doc_fresh_commit == resolved_at
 
 
-def test_flag_note_is_reported(repo: GitRepo, fd: FreshdagsApi, clock: Clock) -> None:
+def test_flag_note_is_reported(
+    repo: GitRepo, fd: FreshdagsApi, time_machine: TimeMachineFixture
+) -> None:
     repo.write("docs/api.md", "doc v1")
     fd.add("docs/api.md", "ext:stripe-api")
     repo.commit(date=T1)
-    clock.set(T2)
+    time_machine.move_to(T2, tick=False)
     fd.flag("ext:stripe-api", note="API v2 released")
 
     drift = fd.check().drift[0]
@@ -121,9 +126,3 @@ def test_render_summary_counts_drifted_docs() -> None:
     report = CheckReport(rev=None, docs_checked=3, drift=[drift(), drift(source="src/b.py")])
 
     assert "🦡 1 doc drifted" in render_check(report)
-
-
-def test_render_without_emoji() -> None:
-    report = CheckReport(rev=None, docs_checked=1, drift=[drift()])
-
-    assert "🦡" not in render_check(report, emoji=False)

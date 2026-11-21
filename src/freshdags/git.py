@@ -1,11 +1,14 @@
 """Thin wrapper around the `git` command line. The only module that runs git."""
 
+import logging
 import os
 import subprocess
 from collections.abc import Mapping
 from pathlib import Path
 
 from freshdags.errors import FreshdagsError
+
+log = logging.getLogger(__name__)
 
 
 class GitError(FreshdagsError):
@@ -27,6 +30,7 @@ class Git:
 
         `env` adds to (or overrides) the base environment for this call only.
         """
+        log.debug("git %s", " ".join(args))
         result = subprocess.run(
             ["git", *args],
             cwd=self.root,

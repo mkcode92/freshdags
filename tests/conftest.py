@@ -4,9 +4,10 @@ so neither the CLI binding nor the internal module layout is under test here."""
 from pathlib import Path
 
 import pytest
-from support import Clock, GitRepo
+from support import GitRepo
 
 from freshdags.api import FreshdagsApi
+from freshdags.core import Freshdags
 
 
 @pytest.fixture
@@ -19,13 +20,10 @@ def repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> GitRepo:
 
 
 @pytest.fixture
-def clock() -> Clock:
-    return Clock()
+def fd(repo: GitRepo) -> FreshdagsApi:
+    """The implementation under test, working on `repo`.
 
-
-@pytest.fixture
-def fd(repo: GitRepo, clock: Clock) -> FreshdagsApi:
-    """The implementation under test, working on `repo` with a pinned clock."""
-    from freshdags.core import Freshdags  # not implemented yet
-
-    return Freshdags(repo.root, now=clock, git=repo)
+    Tests that need a specific wall-clock time for `resolve` / `flag` records pin it with
+    the `time_machine` fixture: `time_machine.move_to(T2, tick=False)`.
+    """
+    return Freshdags(repo.root, git=repo)

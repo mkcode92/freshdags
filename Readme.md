@@ -107,6 +107,8 @@ freshdags show src/api/interface.py   # its sources and dependents
 
 **Exit codes:** `0` no drift, `1` drift found, `2` usage or graph-file error.
 
+**Verbosity:** by default, commands print only their results (the `check` report, `show`) and errors. `-v` adds confirmations such as "docs/api.md depends on src/api.py"; `-vv` adds diagnostics like the git commands run. `-q` prints nothing but errors, for hooks and CI that only need the exit code. Confirmations and diagnostics go to stderr, so `--json` output stays clean.
+
 ## Settings
 
 Settings live in `freshdags.json`:

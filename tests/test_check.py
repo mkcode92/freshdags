@@ -5,7 +5,8 @@ counts as a change and a commit to a doc counts as resolving it. A doc also coun
 date from the commit that created it. Times are commit author dates, which survive rebases.
 """
 
-from support import T1, T2, T3, T4, Clock, GitRepo, setup_api_doc
+from support import T1, T2, T3, T4, GitRepo, setup_api_doc
+from time_machine import TimeMachineFixture
 
 from freshdags.api import FreshdagsApi
 
@@ -95,14 +96,16 @@ def test_manual_resolve_ignores_doc_commits(repo: GitRepo, fd: FreshdagsApi) -> 
     assert fd.check().drifted_docs == ["docs/api.md"]
 
 
-def test_manual_flag_ignores_source_commits(repo: GitRepo, fd: FreshdagsApi, clock: Clock) -> None:
+def test_manual_flag_ignores_source_commits(
+    repo: GitRepo, fd: FreshdagsApi, time_machine: TimeMachineFixture
+) -> None:
     setup_api_doc(repo, fd)
     repo.set_setting("flag", "manual")
     repo.commit({"src/api.py": "refactor"}, date=T2)
 
     assert fd.check().ok
 
-    clock.set(T3)
+    time_machine.move_to(T3, tick=False)
     fd.flag("src/api.py")
     assert fd.check().drifted_docs == ["docs/api.md"]
 
@@ -119,12 +122,14 @@ def test_doc_created_after_source_change_is_fresh(repo: GitRepo, fd: FreshdagsAp
     assert fd.check().ok
 
 
-def test_external_doc_flagged_by_repo_change(repo: GitRepo, fd: FreshdagsApi, clock: Clock) -> None:
+def test_external_doc_flagged_by_repo_change(
+    repo: GitRepo, fd: FreshdagsApi, time_machine: TimeMachineFixture
+) -> None:
     """An external page (a wiki, say) has no commits, so only `resolve` clears it."""
     repo.write("src/api.py", "api v1")
     fd.add("ext:wiki-api", "src/api.py")
     repo.commit(date=T1)
-    clock.set(T2)
+    time_machine.move_to(T2, tick=False)
     fd.resolve("ext:wiki-api")
     repo.commit({"src/api.py": "api v2"}, date=T3)
 

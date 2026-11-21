@@ -1,4 +1,4 @@
-"""Test helpers: a git repo with controllable dates, a settable clock, shared scenarios."""
+"""Test helpers: a git repo with controllable dates, and shared scenarios."""
 
 import json
 import os
@@ -77,19 +77,6 @@ class GitRepo(Git):
         data = self.graph()
         data["settings"][key] = value
         (self.root / GRAPH_FILE).write_text(json.dumps(data, indent=2), encoding="utf-8")
-
-
-class Clock:
-    """Wall clock for `resolve` and `flag` records. Starts at T1; move it with `set`."""
-
-    def __init__(self) -> None:
-        self.now = datetime.fromisoformat(T1)
-
-    def set(self, iso: str) -> None:
-        self.now = datetime.fromisoformat(iso)
-
-    def __call__(self) -> datetime:
-        return self.now
 
 
 def setup_api_doc(repo: GitRepo, fd: FreshdagsApi) -> str:
