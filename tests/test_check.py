@@ -9,6 +9,7 @@ from support import T1, T2, T3, T4, GitRepo, setup_api_doc
 from time_machine import TimeMachineFixture
 
 from freshdags.api import FreshdagsApi
+from freshdags.core import Freshdags
 
 
 def test_no_drift_when_committed_together(repo: GitRepo, fd: FreshdagsApi) -> None:
@@ -74,6 +75,23 @@ def test_check_reports_every_drifted_edge(repo: GitRepo, fd: FreshdagsApi) -> No
         ("docs/b.md", "src/y.py"),
     ]
     assert report.docs_checked == 2
+
+
+def test_check_gives_same_report_in_small_batches(repo: GitRepo, fd: Freshdags) -> None:
+    """Large graphs query git in batches of paths; batching must not change the result."""
+    for path in ("docs/a.md", "docs/b.md", "src/x.py", "src/y.py"):
+        repo.write(path, "v1")
+    fd.add("docs/a.md", "src/x.py", "src/y.py")
+    fd.add("docs/b.md", "docs/a.md")
+    repo.commit(date=T1)
+    repo.commit({"src/x.py": "v2"}, date=T2)
+    repo.commit({"docs/a.md": "v2", "src/y.py": "v2"}, date=T3)
+    in_one_call = fd.check()
+
+    fd.log_batch_size = 1
+
+    assert fd.check() == in_one_call
+    assert in_one_call.drifted_docs == ["docs/b.md"]
 
 
 def test_change_ripples_through_doc_chain(repo: GitRepo, fd: FreshdagsApi) -> None:

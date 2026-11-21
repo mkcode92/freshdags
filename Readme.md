@@ -2,7 +2,7 @@
 
 A small CLI that helps prevent documentation drift — especially in codebases where agents change code faster than anyone re-reads the docs. It works just as well for keeping any file consistent with the specs and invariants it depends on.
 
-> **Status:** design and tests are in place; the commands are not implemented yet. Everything below describes the intended behaviour.
+> **Status:** early. All commands below work, but nothing is released yet and the file format may still change.
 
 ## Install
 
@@ -27,9 +27,10 @@ Later, someone changes `src/api/interface.py` and commits. Now:
 
 ```sh
 $ freshdags check
-docs/api.md drifted: src/api/interface.py changed since 3f2a91c
-  review:  git diff 3f2a91c..HEAD -- src/api/interface.py
-  then:    update docs/api.md, or run: freshdags resolve docs/api.md
+docs/api.md drifted
+  src/api/interface.py changed since 3f2a91c
+    review: git diff 3f2a91c..HEAD -- src/api/interface.py
+  then: update docs/api.md, or run: freshdags resolve docs/api.md
 
 🦡 1 doc drifted. The badger is watching.
 ```

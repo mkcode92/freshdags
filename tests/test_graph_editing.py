@@ -55,7 +55,7 @@ def test_graph_file_is_stable_and_sorted(repo: GitRepo, fd: FreshdagsApi) -> Non
 
     text = repo.graph_text()
 
-    assert text.index('"docs/a.md"') < text.index('"docs/z.md"') < text.index('"src/api.py"')
+    assert list(repo.graph()["nodes"]) == ["docs/a.md", "docs/z.md", "src/api.py"]
     assert text.endswith("\n")
 
 

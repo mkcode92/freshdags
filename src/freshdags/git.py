@@ -25,10 +25,11 @@ class Git:
         """Environment for every git call. Subclasses may override, e.g. to isolate config."""
         return dict(os.environ)
 
-    def run(self, *args: str, env: Mapping[str, str] | None = None) -> str:
-        """Run `git <args>` in the repository and return stripped stdout.
+    def run(self, *args: str, env: Mapping[str, str] | None = None, strip: bool = True) -> str:
+        """Run `git <args>` in the repository and return stdout.
 
-        `env` adds to (or overrides) the base environment for this call only.
+        `env` adds to (or overrides) the base environment for this call only. `strip=False`
+        keeps leading whitespace, which is significant in some formats like `status`.
         """
         log.debug("git %s", " ".join(args))
         result = subprocess.run(
@@ -41,4 +42,4 @@ class Git:
         )
         if result.returncode != 0:
             raise GitError(f"git {' '.join(args)} failed: {result.stderr.strip()}")
-        return result.stdout.strip()
+        return result.stdout.strip() if strip else result.stdout
