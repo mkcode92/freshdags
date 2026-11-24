@@ -2,15 +2,17 @@
 
 A small CLI that helps prevent documentation drift — especially in codebases where agents change code faster than anyone re-reads the docs. It works just as well for keeping any file consistent with the specs and invariants it depends on.
 
-> **Status:** early. All commands below work, but the file format may still change. Until v0.1.0 is on PyPI, install from GitHub (see below); the pre-commit and CI snippets need that release.
+> **Status:** early (0.1). All commands below work; the file format may still change, and newer versions upgrade older files.
 
 ## Install
+
+From [PyPI](https://pypi.org/project/freshdags/):
 
 ```sh
 uv tool install freshdags   # or: pipx install freshdags
 ```
 
-Until the first release on PyPI, install from GitHub instead: `uv tool install git+https://github.com/mkcode92/freshdags`.
+To try it without installing: `uvx freshdags --help`.
 
 ## Quick start
 
