@@ -6,9 +6,9 @@ freshdags is a CLI that flags docs that may have drifted from the files they des
 
 `freshdags.json` records which docs describe which files (https://github.com/mkcode92/freshdags).
 
-- When `freshdags check` or the pre-commit hook reports drift, read each doc against its
-  `git diff` and fix what the change made wrong. Run commands to see their output; do not guess.
-- Resolve only a doc you read and found still correct: `freshdags resolve DOC --note "why"`.
+- When `freshdags check` or the pre-commit hook reports drift, update each doc where the
+  change made it wrong. Run commands to see their output; do not guess it.
+- Resolve only a doc that is still correct: `freshdags resolve DOC --note "why"`.
   Never resolve just to make a check, hook or CI pass.
 - When a doc starts describing another file: `freshdags add DOC SOURCE`.
 - Never edit `freshdags.json` by hand or commit with `--no-verify`.

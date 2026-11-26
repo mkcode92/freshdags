@@ -32,30 +32,32 @@ $ freshdags check
 docs/api.md may have drifted
   src/api/interface.py changed since 3f2a91c
     review: git diff 3f2a91c..HEAD -- src/api/interface.py
-  then: read docs/api.md against the diff and fix what it made wrong,
+  then: update docs/api.md where the change made it wrong,
   or, only if it is still correct: freshdags resolve docs/api.md --note "why"
 
 🦡 1 doc may have drifted. The badger is watching.
 Never resolve just to make this check, a hook or CI pass.
 ```
 
-Read the diff and the doc, then either:
+What to do next depends on whether the doc still holds:
 
-- **update the doc and commit it** — that clears the flag. Because the doc changed, `README.md` is flagged next, and you check it the same way; or
-- **resolve it, if it is still correct:** `freshdags resolve docs/api.md --note "internal refactor, API unchanged"`. The note is required: a resolve claims that you read the doc and it still holds, and the note makes that claim reviewable in `freshdags.json`. Nothing changed, so `README.md` stays fresh.
+## Everyday use
+
+**A source changed and the doc is out of date.** Update the doc and commit it; that clears the flag. Because the doc changed, the docs that depend on it (here `README.md`) are flagged next, and you handle them the same way until:
 
 ```sh
 $ freshdags check
 🦡✨ All 2 docs are fresh.
 ```
 
-## Everyday use
-
-**A change was minor and no doc needs updating.** After checking each drifted doc, resolve them all at once:
+**A source changed, but the doc is still correct.** Resolve it, saying why. The note is required: a resolve claims that the doc still holds, and the note makes that claim reviewable in `freshdags.json`. The doc did not change, so its dependents stay fresh.
 
 ```sh
-freshdags resolve --all --note "formatting only"
+freshdags resolve docs/api.md --note "internal refactor, API unchanged"
+freshdags resolve --all --note "formatting only"    # every drifted doc at once
 ```
+
+Never resolve just to make a check, a hook or CI pass.
 
 **Something changed that git cannot see** — a vendor API, or a behaviour change that did not touch the file a doc depends on:
 
@@ -64,36 +66,7 @@ freshdags flag ext:stripe-api --note "API v2 released"
 freshdags flag src/api/interface.py --note "timeouts now in seconds"
 ```
 
-**See what depends on what:**
-
-```sh
-freshdags show                   # the whole graph
-freshdags show src/api/interface.py   # its sources and dependents
-```
-
-`(!)` marks a doc that may have drifted, `(*)` a source that changed after the doc it is listed under was up to date:
-
-```text
-README.md
-  docs/api.md (!)
-docs/api.md (!)
-  src/api/interface.py (*)
-
-(!) may have drifted   (*) changed after the doc it is listed for
-```
-
-**Draw the graph.** Docs are on the left and the code they describe on the right, as in a file tree; arrows point from source to doc, the way changes ripple. Drifted docs are red, the sources whose changes made them drift are amber, and a doc that is both is red with a thick amber border. `ext:` nodes have a dashed outline.
-
-```sh
-freshdags show -o graph.md     # Mermaid in a Markdown block, drawn by GitHub and GitLab
-freshdags show -o graph.html   # a page with a tooltip per node, see below
-freshdags show -o graph.mmd    # plain Mermaid
-freshdags show -o graph.dot    # Graphviz DOT; `dot -Tsvg` keeps the tooltips as hover text
-```
-
-The HTML and DOT tooltips show what `check` reports about the node (what drifted, and the `git diff` to review it), then its last commit with author and subject, uncommitted changes, and the last `resolve` and `flag`.
-
-`-o` picks the format from the extension, and `--format text|mermaid|markdown|dot|html` sets it explicitly, also when printing. `-o` always writes UTF-8, unlike `>` in Windows PowerShell. The HTML page loads [Mermaid](https://mermaid.js.org) from a CDN, so it needs a network connection to display. The graph itself never leaves your machine: the page pins Mermaid's exact file by hash, and its security policy forbids it to send anything. VS Code's Markdown preview draws Mermaid only with an extension such as *Markdown Preview Mermaid Support*.
+## Integration
 
 **Stop drift before it is committed** with [pre-commit](https://pre-commit.com). Add to `.pre-commit-config.yaml`:
 
@@ -105,7 +78,7 @@ repos:
       - id: freshdags
 ```
 
-The hook runs `freshdags check --uncommitted`: the changes you are committing count as a commit made now, so a source change without its doc update fails the commit. It also fails while older drift is still open. If the doc needs no update, resolve it with a note and commit again: the resolve records the content you reviewed, so committing exactly that content keeps the doc fresh. Never resolve just to get past the hook or CI.
+The hook runs `freshdags check --uncommitted`: the changes you are committing count as a commit made now, so a source change without its doc update fails the commit, as does older drift that is still open. If the doc needs no update, resolve it and commit again: the resolve records the content you reviewed, so committing exactly that content keeps the doc fresh.
 
 **Check a pull request in CI**, for drift that was committed anyway. `check` exits with `1` when something drifted. It needs the git history, so fetch it fully:
 
@@ -117,20 +90,68 @@ The hook runs `freshdags check --uncommitted`: the changes you are committing co
 - run: uvx freshdags check
 ```
 
-**Work with agents.** Run `freshdags configure --auto-flag on-change --auto-resolve on-change` (see [Settings](#settings)), so drift shows up as soon as a file is saved, before anything is committed. Agents can read `freshdags check --json`. With the pre-commit hook, an agent sees the `check` report, with what to review and what to do, whenever it commits drift. Add the rules the report cannot enforce to your `AGENTS.md` (for Claude Code, a `CLAUDE.md` containing `@AGENTS.md` imports it):
+**Work with agents.** With the pre-commit hook, an agent sees the `check` report whenever it commits drift, including what to do about it. Run `freshdags configure --auto-flag on-change --auto-resolve on-change` (see [Settings](#settings)) so drift shows up as soon as a file is saved; agents can also read `freshdags check --json`. Add the rules the report cannot enforce to your `AGENTS.md` (Claude Code reads it through a `CLAUDE.md` containing `@AGENTS.md`):
 
 ```markdown
 ## Keeping docs fresh
 
 `freshdags.json` records which docs describe which files (https://github.com/mkcode92/freshdags).
 
-- When `freshdags check` or the pre-commit hook reports drift, read each doc against its
-  `git diff` and fix what the change made wrong. Run commands to see their output; do not guess.
-- Resolve only a doc you read and found still correct: `freshdags resolve DOC --note "why"`.
+- When `freshdags check` or the pre-commit hook reports drift, update each doc where the
+  change made it wrong. Run commands to see their output; do not guess it.
+- Resolve only a doc that is still correct: `freshdags resolve DOC --note "why"`.
   Never resolve just to make a check, hook or CI pass.
 - When a doc starts describing another file: `freshdags add DOC SOURCE`.
 - Never edit `freshdags.json` by hand or commit with `--no-verify`.
 ```
+
+## Viewing the graph
+
+```sh
+freshdags show                        # every doc with its sources
+freshdags show src/api/interface.py   # one node's sources and dependents
+```
+
+`(!)` marks a doc that may have drifted, `(*)` a source that changed after the doc it is listed under was up to date:
+
+```text
+README.md
+  docs/api.md (!)
+docs/api.md (!)
+  ext:stripe-api
+  src/api/interface.py (*)
+
+(!) may have drifted   (*) changed after the doc it is listed for
+```
+
+To draw it, write it to a file; the extension picks the format (or use `--format`):
+
+```sh
+freshdags show -o graph.md     # Mermaid in a Markdown block, drawn by GitHub and GitLab
+freshdags show -o graph.html   # a standalone page with details on hover
+freshdags show -o graph.dot    # Graphviz DOT (`.mmd` gives plain Mermaid)
+```
+
+The same graph as `graph.md`: drifted docs are red, the sources that made them drift amber, external nodes dashed.
+
+```mermaid
+flowchart RL
+  n0["README.md"]
+  n1["docs/api.md"]
+  n2(["ext:stripe-api"])
+  n3["src/api/interface.py"]
+  n1 --> n0
+  n2 --> n1
+  n3 --> n1
+  classDef external stroke-dasharray: 4 3
+  class n2 external
+  classDef drifted fill:#ffebe9,stroke:#cf222e,stroke-width:1.5px,color:#1f2328
+  class n1 drifted
+  classDef changed fill:#fff8c5,stroke:#bf8700,stroke-width:1.5px,color:#1f2328
+  class n3 changed
+```
+
+The HTML page loads Mermaid from a CDN, but the graph never leaves your machine: the page may load nothing else and send nothing.
 
 ## What to track
 

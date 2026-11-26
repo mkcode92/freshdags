@@ -33,7 +33,7 @@ def render_check(report: CheckReport) -> str:
         lines = [f"{doc} may have drifted"]
         for drift in drifts:
             lines.extend(_describe(drift, report.rev))
-        lines.append(f"  then: read {doc} against the diff and fix what it made wrong,")
+        lines.append(f"  then: update {doc} where the change made it wrong,")
         lines.append(f'  or, only if it is still correct: freshdags resolve {doc} --note "why"')
         blocks.append("\n".join(lines))
     blocks.append(_summary(report))

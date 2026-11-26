@@ -107,7 +107,7 @@ def test_render_names_diff_and_next_step() -> None:
     text = render_check(report)
 
     assert "git diff aaaaaaa..HEAD -- src/api.py" in text
-    assert "then: read docs/api.md against the diff and fix what it made wrong," in text
+    assert "then: update docs/api.md where the change made it wrong," in text
     assert 'only if it is still correct: freshdags resolve docs/api.md --note "why"' in text
 
 
