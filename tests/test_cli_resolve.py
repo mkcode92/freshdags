@@ -1,6 +1,8 @@
 """`freshdags resolve` on the command line requires a note: a resolve claims the doc is still
 correct, and the note makes that claim reviewable. The API leaves it optional."""
 
+import re
+
 from support import GitRepo, setup_api_doc
 from typer.testing import CliRunner
 
@@ -14,7 +16,8 @@ def test_resolve_without_note_is_refused(repo: GitRepo, fd: FreshdagsApi) -> Non
     result = CliRunner().invoke(app, ["resolve", "docs/api.md"])
 
     assert result.exit_code == 2
-    assert "--note" in result.output
+    # On CI, the error box is coloured, with escape codes even inside `--note`.
+    assert "--note" in re.sub(r"\x1b\[[0-9;]*m", "", result.output)
     assert "resolved" not in repo.graph()["nodes"]["docs/api.md"]
 
 
