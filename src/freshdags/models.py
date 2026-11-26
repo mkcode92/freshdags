@@ -176,6 +176,29 @@ class NodeView(BaseModel):
     """What depends on this node."""
 
 
+class Commit(BaseModel):
+    sha: str
+    at: AwareDatetime
+    """Author date."""
+    author: str
+    subject: str
+    """First line of the message."""
+
+
+class NodeStatus(BaseModel):
+    """What is known about one node, besides its edges."""
+
+    name: str
+    last_commit: Commit | None
+    """Latest commit touching the file; None for external and never-committed files."""
+    saved_at: AwareDatetime | None
+    """Modification time of the file's uncommitted changes, if it has any."""
+    resolved: Resolution | None
+    """Last `freshdags resolve`."""
+    flagged: Flag | None
+    """Last `freshdags flag`."""
+
+
 class Drift(BaseModel):
     """`doc` is stale: `source` changed after the doc was last up to date. A doc with
     several changed sources has one Drift per source, so the report shows them all."""
@@ -191,6 +214,9 @@ class Drift(BaseModel):
     """Commit that changed the source; None for a `flag` or an uncommitted save."""
     note: str | None
     """Note from `freshdags flag`, if the change was flagged by hand."""
+    flagged: bool = False
+    """The change was recorded by `freshdags flag`; otherwise git saw it, as a commit or,
+    when `source_changed_commit` is None, an uncommitted save."""
 
 
 class CheckReport(BaseModel):

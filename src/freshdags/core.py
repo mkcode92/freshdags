@@ -26,11 +26,13 @@ from freshdags.models import (
     GRAPH_FILE,
     GRAPH_VERSION,
     CheckReport,
+    Commit,
     Drift,
     Flag,
     Graph,
     Mode,
     Node,
+    NodeStatus,
     NodeView,
     Resolution,
     Settings,
@@ -61,6 +63,12 @@ class Moment:
     at: datetime
     commit: str | None = None
     note: str | None = None
+    flagged: bool = False
+    """Recorded by `freshdags flag`, not seen by git."""
+    author: str | None = None
+    """Author of the commit, if it was one."""
+    subject: str | None = None
+    """First line of the commit message, if it was one."""
 
 
 def latest(*moments: Moment | None) -> Moment | None:
@@ -166,6 +174,30 @@ class Freshdags(FreshdagsApi):
             dependents=sorted(doc for doc, n in graph.nodes.items() if name in n.depends_on),
         )
 
+    def node_status(self) -> list[NodeStatus]:
+        graph = self._load()
+        history = self._history(graph, None, graph.settings, saved_at=None)
+        files = sorted(name for name in graph.nodes if not is_external(name))
+        saved = history.saved or self._saved(files, None)
+        result = []
+        for name, node in sorted(graph.nodes.items()):
+            last = history.last.get(name)
+            commit = (
+                Commit(sha=last.commit, at=last.at, author=last.author, subject=last.subject)
+                if last and last.commit and last.author is not None and last.subject is not None
+                else None
+            )
+            result.append(
+                NodeStatus(
+                    name=name,
+                    last_commit=commit,
+                    saved_at=saved[name].at if name in saved else None,
+                    resolved=node.resolved,
+                    flagged=node.flagged,
+                )
+            )
+        return result
+
     # --- drift ------------------------------------------------------------------------------
 
     def check(self, rev: str | None = None, *, uncommitted: bool = False) -> CheckReport:
@@ -199,6 +231,7 @@ class Freshdags(FreshdagsApi):
                         source_changed_at=changed.at,
                         source_changed_commit=changed.commit,
                         note=changed.note,
+                        flagged=changed.flagged,
                     )
                 )
         return CheckReport(rev=rev, docs_checked=docs, drift=drift)
@@ -242,7 +275,7 @@ class Freshdags(FreshdagsApi):
         return latest(
             history.last.get(source) if watches_commits(mode) else None,
             history.saved.get(source) if watches_saves(mode) else None,
-            Moment(flagged.at, None, flagged.note) if flagged else None,
+            Moment(flagged.at, None, flagged.note, flagged=True) if flagged else None,
         )
 
     # --- git --------------------------------------------------------------------------------
@@ -261,13 +294,15 @@ class Freshdags(FreshdagsApi):
             batch = paths[start : start + self.log_batch_size]
             log = self.git.run(
                 "-c", "core.quotepath=off", "--literal-pathspecs",
-                "log", "--format=@@%H %aI", "--name-only", tip, "--", *batch,
+                "log", "--format=@@%H%x1f%aI%x1f%an%x1f%s", "--name-only", tip, "--", *batch,
             )  # fmt: skip
             moment: Moment | None = None
             for line in log.splitlines():
                 if line.startswith("@@"):
-                    sha, date = line[2:].split(" ")
-                    moment = Moment(datetime.fromisoformat(date), sha)
+                    sha, date, author, subject = line[2:].split("\x1f", 3)
+                    moment = Moment(
+                        datetime.fromisoformat(date), sha, author=author, subject=subject
+                    )
                 elif line and moment:
                     if line not in last or moment.at > last[line].at:
                         last[line] = moment

@@ -209,13 +209,14 @@ def test_older_file_version_is_upgraded_on_read(
     [
         lambda fd: fd.graph(),
         lambda fd: fd.neighbours("a"),
+        lambda fd: fd.node_status(),
         lambda fd: fd.check(),
         lambda fd: fd.rm("a", "b"),
         lambda fd: fd.resolve("a"),
         lambda fd: fd.resolve_all(),
         lambda fd: fd.flag("a"),
     ],
-    ids=["graph", "neighbours", "check", "rm", "resolve", "resolve_all", "flag"],
+    ids=["graph", "neighbours", "node_status", "check", "rm", "resolve", "resolve_all", "flag"],
 )
 def test_methods_fail_cleanly_without_graph_file(repo: GitRepo, fd: FreshdagsApi, call) -> None:
     with pytest.raises(GraphNotFoundError, match="freshdags.json"):

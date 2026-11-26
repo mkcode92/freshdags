@@ -13,7 +13,7 @@ All errors derive from freshdags.errors.FreshdagsError.
 
 from abc import ABC, abstractmethod
 
-from freshdags.models import CheckReport, Graph, Mode, NodeView, Settings
+from freshdags.models import CheckReport, Graph, Mode, NodeStatus, NodeView, Settings
 
 
 class FreshdagsApi(ABC):
@@ -67,6 +67,14 @@ class FreshdagsApi(ABC):
 
         Raises:
             UnknownNodeError: `node` is not in the graph.
+        """
+
+    @abstractmethod
+    def node_status(self) -> list[NodeStatus]:
+        """Every node with its last commit, uncommitted save, resolve and flag; by name.
+
+        Saves are reported whatever the settings say; they are facts about the working
+        tree, not drift.
         """
 
     # --- drift ------------------------------------------------------------------------------

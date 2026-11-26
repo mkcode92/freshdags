@@ -12,6 +12,7 @@ import io
 import logging
 import sys
 from collections.abc import Callable
+from enum import StrEnum
 from pathlib import Path
 from typing import Annotated
 
@@ -22,7 +23,16 @@ from freshdags.api import FreshdagsApi
 from freshdags.core import Freshdags
 from freshdags.errors import FreshdagsError
 from freshdags.models import Mode
-from freshdags.render import render_check, render_graph, render_node, render_settings
+from freshdags.render import (
+    render_check,
+    render_dot,
+    render_graph,
+    render_html,
+    render_markdown,
+    render_mermaid,
+    render_node,
+    render_settings,
+)
 
 app = typer.Typer(
     name="freshdags",
@@ -152,14 +162,71 @@ def configure(
     output.result(render_settings(api().configure(auto_flag=auto_flag, auto_resolve=auto_resolve)))
 
 
+class Format(StrEnum):
+    TEXT = "text"
+    MERMAID = "mermaid"
+    MARKDOWN = "markdown"
+    DOT = "dot"
+    HTML = "html"
+
+
+FORMAT_BY_SUFFIX = {
+    ".mmd": Format.MERMAID,
+    ".md": Format.MARKDOWN,
+    ".dot": Format.DOT,
+    ".gv": Format.DOT,
+    ".html": Format.HTML,
+}
+"""The format `show -o FILE` picks when --format is not given."""
+
+
 @app.command()
 @handle_errors
 def show(
     node: Annotated[str | None, typer.Argument(help="Show only this node.")] = None,
+    fmt: Annotated[
+        Format | None,
+        typer.Option(
+            "--format",
+            help="All but text draw the whole graph and highlight drift. Default: text, or "
+            "from the --output extension (.mmd, .md, .dot, .gv, .html).",
+        ),
+    ] = None,
+    out: Annotated[
+        Path | None,
+        typer.Option(
+            "--output", "-o", help="Write to this file (UTF-8) instead of printing.", dir_okay=False
+        ),
+    ] = None,
 ) -> None:
     """Print the graph, or one node's sources and dependents."""
+    if fmt is None:
+        fmt = FORMAT_BY_SUFFIX.get(out.suffix.lower(), Format.TEXT) if out else Format.TEXT
+    if node and fmt is not Format.TEXT:
+        raise typer.BadParameter(f"--format {fmt} draws the whole graph; leave out NODE.")
     fd = api()
-    output.result(render_node(fd.neighbours(node)) if node else render_graph(fd.graph()))
+    report = fd.check()
+    match fmt:
+        case Format.TEXT:
+            text = (
+                render_node(fd.neighbours(node), report)
+                if node
+                else render_graph(fd.graph(), report)
+            )
+        case Format.MERMAID:
+            text = render_mermaid(fd.graph(), report)
+        case Format.MARKDOWN:
+            text = render_markdown(fd.graph(), report)
+        case Format.DOT:
+            text = render_dot(fd.graph(), report, fd.node_status())
+        case Format.HTML:
+            text = render_html(fd.graph(), report, fd.node_status())
+    if out is None:
+        output.result(text)
+        return
+    # Written here rather than redirected: Windows PowerShell's `>` writes UTF-16.
+    out.write_text(text + "\n", encoding="utf-8", newline="\n")
+    log.info("Wrote %s", out)
 
 
 @app.command()

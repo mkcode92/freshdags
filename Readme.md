@@ -69,6 +69,28 @@ freshdags show                   # the whole graph
 freshdags show src/api/interface.py   # its sources and dependents
 ```
 
+`(!)` marks a doc that may have drifted, `(*)` a source that changed after the doc it is listed under was up to date:
+
+```text
+docs/api.md (!)
+  src/api/interface.py (*)
+README.md
+  docs/api.md (!)
+```
+
+**Draw the graph.** Docs are on the left and the code they describe on the right, as in a file tree; arrows point from source to doc, the way changes ripple. Drifted docs are red, the sources whose changes made them drift are amber, and a doc that is both is red with a thick amber border. `ext:` nodes have a dashed outline.
+
+```sh
+freshdags show -o graph.md     # Mermaid in a Markdown block, drawn by GitHub and GitLab
+freshdags show -o graph.html   # a page with a tooltip per node, see below
+freshdags show -o graph.mmd    # plain Mermaid
+freshdags show -o graph.dot    # Graphviz DOT; `dot -Tsvg` keeps the tooltips as hover text
+```
+
+The HTML and DOT tooltips show what `check` reports about the node (what drifted, and the `git diff` to review it), then its last commit with author and subject, uncommitted changes, and the last `resolve` and `flag`.
+
+`-o` picks the format from the extension, and `--format text|mermaid|markdown|dot|html` sets it explicitly, also when printing. `-o` always writes UTF-8, unlike `>` in Windows PowerShell. The HTML page loads [Mermaid](https://mermaid.js.org) from a CDN, so it needs a network connection to display. The graph itself never leaves your machine: the page pins Mermaid's exact file by hash, and its security policy forbids it to send anything. VS Code's Markdown preview draws Mermaid only with an extension such as *Markdown Preview Mermaid Support*.
+
 **Stop drift before it is committed** with [pre-commit](https://pre-commit.com). Add to `.pre-commit-config.yaml`:
 
 ```yaml
@@ -115,7 +137,7 @@ The hook runs `freshdags check --uncommitted`: the changes you are committing co
 |---|---|
 | `freshdags add DOC SOURCE...` | Record that DOC depends on each SOURCE. Creates `freshdags.json` if needed. Refuses missing or untracked files, self-dependencies and cycles. |
 | `freshdags rm DOC SOURCE...` | Remove those dependencies, and nodes no longer connected to anything. |
-| `freshdags show [NODE]` | Print the graph, or one node's sources and dependents. |
+| `freshdags show [NODE] [--format FORMAT] [-o FILE]` | Print the graph, or one node's sources and dependents. The formats `mermaid`, `markdown`, `dot` and `html` draw the whole graph with drift highlighted. |
 | `freshdags check [REV] [--json] [--uncommitted]` | List every doc that may have drifted. Without `REV`, uses the current `freshdags.json`, the history up to `HEAD` and, in `on-change` mode, uncommitted changes; with `REV`, evaluates the graph as of that commit. `--uncommitted` counts uncommitted changes as a commit made now, for pre-commit hooks. |
 | `freshdags resolve DOC...` | Mark docs as drift-free after reviewing them. |
 | `freshdags resolve --all` | Resolve every drifted doc, when the change needed no doc update. |
@@ -177,7 +199,6 @@ freshdags keeps your dependencies as a graph (a DAG) in `freshdags.json`. The ru
 ## Planned
 
 - `--base REV` for `check`, to report only drift introduced by a pull request
-- `show --format dot` for drawing the graph with Graphviz
 - Directory and glob sources, so a per-directory README tracks new files automatically
 - A ready-made snippet for `AGENTS.md` / `CLAUDE.md`
 
