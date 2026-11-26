@@ -151,8 +151,6 @@ flowchart RL
   class n3 changed
 ```
 
-The HTML page loads Mermaid from a CDN, but the graph never leaves your machine: the page may load nothing else and send nothing.
-
 ## What to track
 
 **Point docs at interfaces, not implementations.** If a doc depends on implementation details, every refactor flags it and the signal turns into noise. Keep APIs and interfaces in their own files and make docs depend on those.
