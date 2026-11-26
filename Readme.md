@@ -2,7 +2,7 @@
 
 A small CLI that helps prevent documentation drift — especially in codebases where agents change code faster than anyone re-reads the docs. It works just as well for keeping any file consistent with the specs and invariants it depends on.
 
-> **Status:** early (0.1). All commands below work; the file format may still change, and newer versions upgrade older files.
+> **Status:** early (0.2). All commands below work; the file format may still change, and newer versions upgrade older files.
 
 ## Install
 
@@ -96,7 +96,7 @@ The HTML and DOT tooltips show what `check` reports about the node (what drifted
 ```yaml
 repos:
   - repo: https://github.com/mkcode92/freshdags
-    rev: v0.1.0
+    rev: v0.2.0
     hooks:
       - id: freshdags
 ```

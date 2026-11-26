@@ -1,6 +1,6 @@
 [project]
 name = "freshdags"
-version = "0.1.0"
+version = "0.2.0"
 description = "Track dependencies between docs and the code they describe, and flag documentation drift."
 readme = "Readme.md"
 license = "MIT"
