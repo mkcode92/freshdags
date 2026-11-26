@@ -1,5 +1,10 @@
 {
   "nodes": {
+    "AGENTS.md": {
+      "depends_on": [
+        "src/freshdags/cli.py"
+      ]
+    },
     "Readme.md": {
       "depends_on": [
         "src/freshdags/api.py",
@@ -18,5 +23,5 @@
     "auto-flag": "on-change",
     "auto-resolve": "on-change"
   },
-  "version": 1
+  "version": 2
 }

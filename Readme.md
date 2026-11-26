@@ -115,7 +115,27 @@ The hook runs `freshdags check --uncommitted`: the changes you are committing co
 - run: uvx freshdags check
 ```
 
-**Work with agents.** Run `freshdags configure --auto-flag on-change --auto-resolve on-change` (see [Settings](#settings)), so drift shows up as soon as a file is saved, before anything is committed. Agents can read `freshdags check --json`.
+**Work with agents.** Run `freshdags configure --auto-flag on-change --auto-resolve on-change` (see [Settings](#settings)), so drift shows up as soon as a file is saved, before anything is committed. Agents can read `freshdags check --json`. Tell them how to handle drift in your `AGENTS.md` (for Claude Code, a `CLAUDE.md` containing `@AGENTS.md` imports it):
+
+```markdown
+## Keeping docs fresh
+
+This repository records which docs depend on which files in `freshdags.json`
+(see https://github.com/mkcode92/freshdags).
+
+- After changing files, run `freshdags check`. It lists every doc that may have
+  drifted, with a `git diff` command for each changed source.
+- For each drifted doc: run that `git diff`, read the doc, and fix every statement,
+  example and command output the change made wrong. Run commands to see their
+  output; do not guess it.
+- Run `freshdags resolve DOC` only after reading the doc and finding it still
+  correct. Never resolve just to make the check pass.
+- When a doc starts describing another file, record it: `freshdags add DOC SOURCE`.
+- Never edit `freshdags.json` by hand, and never skip the pre-commit hook
+  (`git commit --no-verify`).
+- A passing `freshdags check` means every doc was updated or reviewed after its
+  sources changed, not that it is correct. Its content is your responsibility.
+```
 
 ## What to track
 
@@ -208,7 +228,6 @@ freshdags keeps your dependencies as a graph (a DAG) in `freshdags.json`. The ru
 
 - `--base REV` for `check`, to report only drift introduced by a pull request
 - Directory and glob sources, so a per-directory README tracks new files automatically
-- A ready-made snippet for `AGENTS.md` / `CLAUDE.md`
 
 ## Development
 
