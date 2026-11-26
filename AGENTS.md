@@ -19,7 +19,7 @@ Here, run freshdags from the working copy: `uv run freshdags check`. Settings ar
 
 ```sh
 uv sync
-uv run pre-commit install   # runs `freshdags check --uncommitted` before each commit
+uv run pre-commit install   # ruff check --fix, ruff format, freshdags check before each commit
 uv run pytest
 uv run ruff check . && uv run ruff format --check .
 ```
