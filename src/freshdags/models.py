@@ -10,10 +10,14 @@ from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, field_validato
 GRAPH_FILE = "freshdags.json"
 EXTERNAL_PREFIX = "ext:"
 
-GRAPH_VERSION = 1
-"""Format version of freshdags.json. Bump it only for breaking changes, and add an upgrade."""
+GRAPH_VERSION = 2
+"""Format version of freshdags.json. Bump it for every change an older freshdags cannot read,
+and add an upgrade."""
 
-UPGRADES: dict[int, Callable[[dict[str, Any]], dict[str, Any]]] = {}
+UPGRADES: dict[int, Callable[[dict[str, Any]], dict[str, Any]]] = {
+    # 1 -> 2: resolve records gain `sources`. Old records have none and stay time-based.
+    1: lambda data: data,
+}
 """`UPGRADES[n]` turns the raw data of a version-n file into version n + 1."""
 
 
@@ -73,6 +77,9 @@ class Resolution(Record):
 
     commit: str | None
     """HEAD at the time of resolving; None in a repository without commits."""
+    sources: dict[str, str] = {}
+    """Git blob hash of each source file as reviewed, from the working tree. A later change
+    whose content is exactly this was reviewed, even if it is committed after the resolve."""
 
 
 class Flag(Record):

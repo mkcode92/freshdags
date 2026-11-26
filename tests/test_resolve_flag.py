@@ -22,10 +22,12 @@ def test_resolve_clears_drift(
     assert fd.check().ok
 
 
-def test_resolve_records_who_when_and_commit(
+def test_resolve_records_who_when_commit_and_reviewed_content(
     repo: GitRepo, fd: FreshdagsApi, time_machine: TimeMachineFixture
 ) -> None:
     head = setup_api_doc(repo, fd)
+    fd.add("docs/api.md", "ext:stripe-api")
+    repo.save("src/api.py", "api v2", at=T2)
     time_machine.move_to(T2, tick=False)
 
     fd.resolve("docs/api.md")
@@ -34,6 +36,8 @@ def test_resolve_records_who_when_and_commit(
         "at": "2026-01-02T10:00:00Z",
         "by": "Test",
         "commit": head,
+        # The working tree, as reviewed; external sources have no content.
+        "sources": {"src/api.py": repo.run("hash-object", "src/api.py")},
     }
 
 

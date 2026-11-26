@@ -222,6 +222,8 @@ class Freshdags(FreshdagsApi):
                 changed = self._changed(source, graph.nodes[source], history, settings.auto_flag)
                 if changed is None or not self._is_newer(changed, fresh):
                     continue
+                if self._was_reviewed(node, source, changed, rev):
+                    continue
                 drift.append(
                     Drift(
                         doc=doc,
@@ -239,9 +241,12 @@ class Freshdags(FreshdagsApi):
     def resolve(self, *docs: str) -> list[str]:
         graph = self._load()
         names = [self._require_node(graph, doc) for doc in docs]
-        record = Resolution(at=self._now(), by=self._user(), commit=self._head())
+        at, by, head = self._now(), self._user(), self._head()
         for name in names:
-            graph.nodes[name].resolved = record
+            files = [s for s in graph.nodes[name].depends_on if not is_external(s)]
+            graph.nodes[name].resolved = Resolution(
+                at=at, by=by, commit=head, sources=self._working_hashes(files)
+            )
         self._save(graph)
         return names
 
@@ -350,6 +355,39 @@ class Freshdags(FreshdagsApi):
         except GitError:
             return False
         return True
+
+    def _was_reviewed(self, doc: Node, source: str, changed: Moment, rev: str | None) -> bool:
+        """Whether the doc's last resolve reviewed exactly the content `changed` produced.
+
+        A resolve records the content it reviewed. Committing that content later makes the
+        change newer than the resolve, but it is the same content, so it needs no review.
+        A flag changes no content, so it is never covered.
+        """
+        reviewed = doc.resolved.sources.get(source) if doc.resolved else None
+        if reviewed is None or changed.flagged:
+            return False
+        if changed.commit is None:  # an uncommitted save
+            current = self._working_hashes([source]).get(source)
+        else:
+            try:
+                current = self.git.run(
+                    "rev-parse", "--verify", "--quiet", f"{rev or 'HEAD'}:{source}"
+                )
+            except GitError:
+                current = None
+        return current == reviewed
+
+    def _working_hashes(self, paths: list[str]) -> dict[str, str]:
+        """Git blob hash of each existing file among `paths`, as in the working tree.
+
+        `git hash-object` applies the same filters (such as line endings) as `git add`, so the
+        hash matches the blob a commit of the file would contain.
+        """
+        files = [p for p in paths if (self.root / p).is_file()]
+        if not files:
+            return {}
+        out = self.git.run("--literal-pathspecs", "hash-object", "--", *files)
+        return dict(zip(files, out.splitlines(), strict=True))
 
     def _tracked(self, paths: list[str]) -> set[str]:
         """The subset of `paths` that git tracks (committed or staged)."""

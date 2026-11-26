@@ -101,7 +101,7 @@ repos:
       - id: freshdags
 ```
 
-The hook runs `freshdags check --uncommitted`: the changes you are committing count as a commit made now, so a source change without its doc update fails the commit. It also fails while older drift is still open.
+The hook runs `freshdags check --uncommitted`: the changes you are committing count as a commit made now, so a source change without its doc update fails the commit. It also fails while older drift is still open. If the doc needs no update, run `freshdags resolve` on it and commit again: the resolve records the content you reviewed, so committing exactly that content keeps the doc fresh.
 
 **Check a pull request in CI**, for drift that was committed anyway. `check` exits with `1` when something drifted. It needs the git history, so fetch it fully:
 
@@ -167,6 +167,7 @@ freshdags keeps your dependencies as a graph (a DAG) in `freshdags.json`. The ru
 
 - **Times come from git:** a file's change time is the **author date** of the last commit that touched it. Author dates survive rebases, so rewriting a branch does not raise false flags. Because commits are the source of truth, a doc can be updated in a later commit of the same pull request.
 - **A doc is up to date** from the commit that created it, from its last commit or save (as `auto-resolve` allows), or from its last `resolve` — whichever is latest. The `git diff` hint in `check` starts at that commit.
+- **A resolve covers the content you reviewed.** It records the git blob hash of each source as it is in your working tree. A change to exactly that content needs no new review, even though committing it later makes it newer than the resolve. Any other change, and any `flag`, needs one.
 - **Changes ripple, resolves do not.** A real change to a doc flags the docs that depend on it. Resolving a doc only states that it is still correct, so its dependents stay as they are.
 
 ### The graph file
@@ -178,18 +179,23 @@ freshdags keeps your dependencies as a graph (a DAG) in `freshdags.json`. The ru
   "nodes": {
     "docs/api.md": {
       "depends_on": ["ext:stripe-api", "src/api/interface.py"],
-      "resolved": { "at": "2026-11-19T10:00:00Z", "by": "Jane Doe", "commit": "3f2a91c..." }
+      "resolved": {
+        "at": "2026-11-19T10:00:00Z", "by": "Jane Doe", "commit": "3f2a91c...",
+        "sources": { "src/api/interface.py": "8ab686e..." }
+      }
     },
     "ext:stripe-api": {
       "flagged": { "at": "2026-11-01T00:00:00Z", "by": "Jane Doe", "note": "API v2 released" }
     }
   },
   "settings": { "auto-flag": "on-commit", "auto-resolve": "on-commit" },
-  "version": 1
+  "version": 2
 }
 ```
 
-**Format versions.** `version` changes only when the format changes in a breaking way. A newer freshdags reads older files and upgrades them; the next command that writes the file saves the new format, which shows up as a normal diff. An older freshdags refuses a newer file and asks you to upgrade.
+`sources` holds the reviewed content of each source file as a git blob hash; external sources have none.
+
+**Format versions.** `version` changes whenever an older freshdags could not read the file. A newer freshdags reads older files and upgrades them; the next command that writes the file saves the new format, which shows up as a normal diff. An older freshdags refuses a newer file and asks you to upgrade. Version 2 (freshdags 0.2) added `sources` to resolves; resolves from version-1 files have none, so they cover changes by time only.
 
 ## Known limitations
 

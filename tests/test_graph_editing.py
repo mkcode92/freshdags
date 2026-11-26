@@ -25,7 +25,7 @@ def test_add_creates_graph_file_with_defaults(repo: GitRepo, fd: FreshdagsApi) -
     fd.add("docs/api.md", "src/api.py")
 
     graph = repo.graph()
-    assert graph["version"] == 1
+    assert graph["version"] == 2
     assert graph["settings"] == {"auto-flag": "on-commit", "auto-resolve": "on-commit"}
     assert graph["nodes"]["docs/api.md"]["depends_on"] == ["src/api.py"]
     assert "src/api.py" not in graph["nodes"], "sources appear only in depends_on"
@@ -187,21 +187,64 @@ def test_broken_json_is_reported(repo: GitRepo, fd: FreshdagsApi) -> None:
 def test_older_file_version_is_upgraded_on_read(
     repo: GitRepo, fd: FreshdagsApi, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Pretend the format is at version 2, with an upgrade that renames a key."""
-    monkeypatch.setattr(models, "GRAPH_VERSION", 2)
-    monkeypatch.setattr("freshdags.core.GRAPH_VERSION", 2)
+    """Pretend the format is at version 3, with an upgrade from 2 that renames a key. A
+    version-1 file goes through the real 1 -> 2 upgrade first."""
+    monkeypatch.setattr(models, "GRAPH_VERSION", 3)
+    monkeypatch.setattr("freshdags.core.GRAPH_VERSION", 3)
     monkeypatch.setitem(
         models.UPGRADES,
-        1,
-        lambda data: {"version": 1, "nodes": data["dependencies"]},
+        2,
+        lambda data: {"version": 2, "nodes": data["dependencies"]},
     )
     repo.write("docs/api.md")
     repo.write("freshdags.json", '{"version": 1, "dependencies": {"docs/api.md": {}}}')
 
     graph = fd.graph()
 
-    assert graph.version == 2
+    assert graph.version == 3
     assert list(graph.nodes) == ["docs/api.md"]
+
+
+# A freshdags.json exactly as freshdags 0.1.0 writes it.
+VERSION_1_FILE = """{
+  "nodes": {
+    "docs/api.md": {
+      "depends_on": ["src/api.py"],
+      "resolved": {"at": "2026-01-02T10:00:00Z", "by": "Test", "commit": null}
+    }
+  },
+  "settings": {"auto-flag": "on-commit", "auto-resolve": "on-commit"},
+  "version": 1
+}
+"""
+
+
+def test_version_1_file_is_saved_as_version_2(repo: GitRepo, fd: FreshdagsApi) -> None:
+    repo.write("docs/api.md")
+    repo.write("src/api.py")
+    repo.write("src/models.py")
+    repo.write("freshdags.json", VERSION_1_FILE)
+
+    fd.add("docs/api.md", "src/models.py")
+
+    graph = repo.graph()
+    assert graph["version"] == 2
+    assert graph["nodes"]["docs/api.md"]["resolved"] == {
+        "at": "2026-01-02T10:00:00Z",
+        "by": "Test",
+        "commit": None,
+    }, "an upgraded resolve keeps its record and gains no sources"
+
+
+def test_reading_a_version_1_file_does_not_rewrite_it(repo: GitRepo, fd: FreshdagsApi) -> None:
+    repo.write("docs/api.md")
+    repo.write("src/api.py")
+    repo.write("freshdags.json", VERSION_1_FILE)
+
+    fd.graph()
+    fd.check()
+
+    assert repo.graph_text() == VERSION_1_FILE
 
 
 @pytest.mark.parametrize(
