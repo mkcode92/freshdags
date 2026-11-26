@@ -257,12 +257,28 @@ def check(
 def resolve(
     docs: Annotated[list[str] | None, typer.Argument(help="Docs you reviewed.")] = None,
     all_docs: Annotated[bool, typer.Option("--all", help="Resolve every drifted doc.")] = False,
+    note: Annotated[
+        str,
+        typer.Option(
+            help='Why the docs are still correct, e.g. "internal refactor, API unchanged".'
+        ),
+    ] = "",
 ) -> None:
-    """Mark docs as up to date after reviewing them."""
+    """Record that you read the docs and they are still correct, with --note saying why.
+
+    Never resolve just to make a check, hook or CI pass: fix the doc instead.
+    """
     if all_docs == bool(docs):
         raise typer.BadParameter("Name the docs to resolve, or use --all, but not both.")
+    if not note.strip():
+        # A resolve claims the doc is still correct; the note makes that claim reviewable.
+        raise typer.BadParameter(
+            "Say why the docs are still correct: --note TEXT. Resolve only docs you have read "
+            "against the change, never just to make a check pass."
+        )
     fd = api()
-    resolved = fd.resolve_all() if all_docs else fd.resolve(*(docs or []))
+    note = note.strip()
+    resolved = fd.resolve_all(note=note) if all_docs else fd.resolve(*(docs or []), note=note)
     log.info("Resolved: %s", ", ".join(resolved) if resolved else "nothing")
 
 

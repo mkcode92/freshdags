@@ -80,6 +80,8 @@ class Resolution(Record):
     sources: dict[str, str] = {}
     """Git blob hash of each source file as reviewed, from the working tree. A later change
     whose content is exactly this was reviewed, even if it is committed after the resolve."""
+    note: str | None = None
+    """Why the doc is still correct, for whoever reviews the resolve."""
 
 
 class Flag(Record):

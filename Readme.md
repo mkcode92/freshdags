@@ -32,15 +32,17 @@ $ freshdags check
 docs/api.md may have drifted
   src/api/interface.py changed since 3f2a91c
     review: git diff 3f2a91c..HEAD -- src/api/interface.py
-  then: update docs/api.md, or run: freshdags resolve docs/api.md
+  then: read docs/api.md against the diff and fix what it made wrong,
+  or, only if it is still correct: freshdags resolve docs/api.md --note "why"
 
 🦡 1 doc may have drifted. The badger is watching.
+Never resolve just to make this check, a hook or CI pass.
 ```
 
-Read the diff, then either:
+Read the diff and the doc, then either:
 
 - **update the doc and commit it** — that clears the flag. Because the doc changed, `README.md` is flagged next, and you check it the same way; or
-- **run `freshdags resolve docs/api.md`** if the doc is still correct. Nothing changed, so `README.md` stays fresh.
+- **resolve it, if it is still correct:** `freshdags resolve docs/api.md --note "internal refactor, API unchanged"`. The note is required: a resolve claims that you read the doc and it still holds, and the note makes that claim reviewable in `freshdags.json`. Nothing changed, so `README.md` stays fresh.
 
 ```sh
 $ freshdags check
@@ -49,10 +51,10 @@ $ freshdags check
 
 ## Everyday use
 
-**A change was minor and no doc needs updating.** Resolve every drifted doc at once:
+**A change was minor and no doc needs updating.** After checking each drifted doc, resolve them all at once:
 
 ```sh
-freshdags resolve --all
+freshdags resolve --all --note "formatting only"
 ```
 
 **Something changed that git cannot see** — a vendor API, or a behaviour change that did not touch the file a doc depends on:
@@ -103,7 +105,7 @@ repos:
       - id: freshdags
 ```
 
-The hook runs `freshdags check --uncommitted`: the changes you are committing count as a commit made now, so a source change without its doc update fails the commit. It also fails while older drift is still open. If the doc needs no update, run `freshdags resolve` on it and commit again: the resolve records the content you reviewed, so committing exactly that content keeps the doc fresh.
+The hook runs `freshdags check --uncommitted`: the changes you are committing count as a commit made now, so a source change without its doc update fails the commit. It also fails while older drift is still open. If the doc needs no update, resolve it with a note and commit again: the resolve records the content you reviewed, so committing exactly that content keeps the doc fresh. Never resolve just to get past the hook or CI.
 
 **Check a pull request in CI**, for drift that was committed anyway. `check` exits with `1` when something drifted. It needs the git history, so fetch it fully:
 
@@ -115,26 +117,19 @@ The hook runs `freshdags check --uncommitted`: the changes you are committing co
 - run: uvx freshdags check
 ```
 
-**Work with agents.** Run `freshdags configure --auto-flag on-change --auto-resolve on-change` (see [Settings](#settings)), so drift shows up as soon as a file is saved, before anything is committed. Agents can read `freshdags check --json`. Tell them how to handle drift in your `AGENTS.md` (for Claude Code, a `CLAUDE.md` containing `@AGENTS.md` imports it):
+**Work with agents.** Run `freshdags configure --auto-flag on-change --auto-resolve on-change` (see [Settings](#settings)), so drift shows up as soon as a file is saved, before anything is committed. Agents can read `freshdags check --json`. With the pre-commit hook, an agent sees the `check` report, with what to review and what to do, whenever it commits drift. Add the rules the report cannot enforce to your `AGENTS.md` (for Claude Code, a `CLAUDE.md` containing `@AGENTS.md` imports it):
 
 ```markdown
 ## Keeping docs fresh
 
-This repository records which docs depend on which files in `freshdags.json`
-(see https://github.com/mkcode92/freshdags).
+`freshdags.json` records which docs describe which files (https://github.com/mkcode92/freshdags).
 
-- After changing files, run `freshdags check`. It lists every doc that may have
-  drifted, with a `git diff` command for each changed source.
-- For each drifted doc: run that `git diff`, read the doc, and fix every statement,
-  example and command output the change made wrong. Run commands to see their
-  output; do not guess it.
-- Run `freshdags resolve DOC` only after reading the doc and finding it still
-  correct. Never resolve just to make the check pass.
-- When a doc starts describing another file, record it: `freshdags add DOC SOURCE`.
-- Never edit `freshdags.json` by hand, and never skip the pre-commit hook
-  (`git commit --no-verify`).
-- A passing `freshdags check` means every doc was updated or reviewed after its
-  sources changed, not that it is correct. Its content is your responsibility.
+- When `freshdags check` or the pre-commit hook reports drift, read each doc against its
+  `git diff` and fix what the change made wrong. Run commands to see their output; do not guess.
+- Resolve only a doc you read and found still correct: `freshdags resolve DOC --note "why"`.
+  Never resolve just to make a check, hook or CI pass.
+- When a doc starts describing another file: `freshdags add DOC SOURCE`.
+- Never edit `freshdags.json` by hand or commit with `--no-verify`.
 ```
 
 ## What to track
@@ -150,7 +145,7 @@ This repository records which docs depend on which files in `freshdags.json`
 
 **Things outside the repository** are written as `ext:<name>`. They are the only nodes without a tracked file:
 
-- **External doc**, e.g. a wiki page that describes repo code: a code change flags it. After updating the page, run `freshdags resolve ext:wiki-api`. Resolve it once right after adding it, since it has no commits.
+- **External doc**, e.g. a wiki page that describes repo code: a code change flags it. After updating the page, run `freshdags resolve ext:wiki-api --note "updated the wiki"`. Resolve it once right after adding it, since it has no commits.
 - **External source**, e.g. a vendor API: freshdags cannot see it change, so run `freshdags flag ext:stripe-api` when it does.
 
 ## Commands
@@ -161,8 +156,8 @@ This repository records which docs depend on which files in `freshdags.json`
 | `freshdags rm DOC SOURCE...` | Remove those dependencies, and nodes no longer connected to anything. |
 | `freshdags show [NODE] [--format FORMAT] [-o FILE]` | Print the graph, or one node's sources and dependents, with drift marked `(!)` and `(*)`. The formats `mermaid`, `markdown`, `dot` and `html` draw the whole graph with drift highlighted. |
 | `freshdags check [REV] [--json] [--uncommitted]` | List every doc that may have drifted. Without `REV`, uses the current `freshdags.json`, the history up to `HEAD` and, in `on-change` mode, uncommitted changes; with `REV`, evaluates the graph as of that commit. `--uncommitted` counts uncommitted changes as a commit made now, for pre-commit hooks. |
-| `freshdags resolve DOC...` | Mark docs as drift-free after reviewing them. Records the content of their sources as reviewed. |
-| `freshdags resolve --all` | Resolve every drifted doc, when the change needed no doc update. |
+| `freshdags resolve DOC... --note TEXT` | Record that you read the docs and they are still correct, and why. Records the content of their sources as reviewed. |
+| `freshdags resolve --all --note TEXT` | Resolve every drifted doc, when the change needed no doc update. |
 | `freshdags flag NODE [--note TEXT]` | Record that a source changed, flagging the docs that depend on it. |
 | `freshdags configure [--auto-flag MODE] [--auto-resolve MODE]` | Show the settings, or change them. |
 
@@ -203,6 +198,7 @@ freshdags keeps your dependencies as a graph (a DAG) in `freshdags.json`. The ru
       "depends_on": ["ext:stripe-api", "src/api/interface.py"],
       "resolved": {
         "at": "2026-11-19T10:00:00Z", "by": "Jane Doe", "commit": "3f2a91c...",
+        "note": "internal refactor, API unchanged",
         "sources": { "src/api/interface.py": "8ab686e..." }
       }
     },
@@ -215,7 +211,7 @@ freshdags keeps your dependencies as a graph (a DAG) in `freshdags.json`. The ru
 }
 ```
 
-`sources` holds the reviewed content of each source file as a git blob hash; external sources have none.
+A resolve keeps its `note`, and in `sources` the reviewed content of each source file as a git blob hash; external sources have none. Review both in pull requests: a resolve is a claim that the doc is still correct.
 
 **Format versions.** `version` changes whenever an older freshdags could not read the file. A newer freshdags reads older files and upgrades them; the next command that writes the file saves the new format, which shows up as a normal diff. An older freshdags refuses a newer file and asks you to upgrade. Version 2 (freshdags 0.2) added `sources` to resolves; resolves from version-1 files have none, so they cover changes by time only.
 

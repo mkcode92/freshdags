@@ -6,7 +6,7 @@ from datetime import datetime
 
 from support import T1, T2
 
-from freshdags.models import CheckReport, Commit, Drift, Graph, Node, NodeStatus
+from freshdags.models import CheckReport, Commit, Drift, Graph, Node, NodeStatus, Resolution
 from freshdags.render import (
     MERMAID_INTEGRITY,
     MERMAID_VERSION,
@@ -228,3 +228,18 @@ def test_tooltips_show_node_history() -> None:
     when = datetime.fromisoformat(T1).astimezone().strftime("%Y-%m-%d %H:%M")
     assert f"last commit: ccccccc, {when} by Jane" in page
     assert "uncommitted changes, saved" in page
+
+
+def test_tooltips_show_the_resolve_note() -> None:
+    resolved = Resolution(
+        at=datetime.fromisoformat(T1), by="Jane", commit=None, note="API unchanged"
+    )
+    status = [
+        NodeStatus(
+            name="docs/api.md", last_commit=None, saved_at=None, resolved=resolved, flagged=None
+        )
+    ]
+
+    page = render_html(API, report(), status)
+
+    assert "by Jane: API unchanged" in page

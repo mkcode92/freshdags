@@ -238,21 +238,21 @@ class Freshdags(FreshdagsApi):
                 )
         return CheckReport(rev=rev, docs_checked=docs, drift=drift)
 
-    def resolve(self, *docs: str) -> list[str]:
+    def resolve(self, *docs: str, note: str | None = None) -> list[str]:
         graph = self._load()
         names = [self._require_node(graph, doc) for doc in docs]
         at, by, head = self._now(), self._user(), self._head()
         for name in names:
             files = [s for s in graph.nodes[name].depends_on if not is_external(s)]
             graph.nodes[name].resolved = Resolution(
-                at=at, by=by, commit=head, sources=self._working_hashes(files)
+                at=at, by=by, commit=head, sources=self._working_hashes(files), note=note
             )
         self._save(graph)
         return names
 
-    def resolve_all(self) -> list[str]:
+    def resolve_all(self, note: str | None = None) -> list[str]:
         drifted = self.check().drifted_docs
-        return self.resolve(*drifted) if drifted else []
+        return self.resolve(*drifted, note=note) if drifted else []
 
     def flag(self, node: str, note: str | None = None) -> None:
         graph = self._load()

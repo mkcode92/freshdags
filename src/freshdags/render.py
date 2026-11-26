@@ -33,7 +33,8 @@ def render_check(report: CheckReport) -> str:
         lines = [f"{doc} may have drifted"]
         for drift in drifts:
             lines.extend(_describe(drift, report.rev))
-        lines.append(f"  then: update {doc}, or run: freshdags resolve {doc}")
+        lines.append(f"  then: read {doc} against the diff and fix what it made wrong,")
+        lines.append(f'  or, only if it is still correct: freshdags resolve {doc} --note "why"')
         blocks.append("\n".join(lines))
     blocks.append(_summary(report))
     return "\n\n".join(blocks)
@@ -60,7 +61,10 @@ def _describe(drift: Drift, rev: str | None) -> list[str]:
 def _summary(report: CheckReport) -> str:
     if not report.ok:
         count = len(report.drifted_docs)
-        return f"🦡 {count} {_docs(count)} may have drifted. The badger is watching."
+        return (
+            f"🦡 {count} {_docs(count)} may have drifted. The badger is watching.\n"
+            "Never resolve just to make this check, a hook or CI pass."
+        )
     if report.docs_checked == 0:
         return "🦡✨ Nothing to check yet. Add a dependency with `freshdags add DOC SOURCE`."
     if report.docs_checked == 1:
@@ -330,7 +334,8 @@ def _history_lines(status: NodeStatus) -> list[str]:
     if status.saved_at:
         lines.append(f"uncommitted changes, saved {_when(status.saved_at)}")
     if resolved := status.resolved:
-        lines.append(f"resolved {_when(resolved.at)} by {resolved.by}")
+        note = f": {resolved.note}" if resolved.note else ""
+        lines.append(f"resolved {_when(resolved.at)} by {resolved.by}{note}")
     if flagged := status.flagged:
         note = f": {flagged.note}" if flagged.note else ""
         lines.append(f"flagged {_when(flagged.at)} by {flagged.by}{note}")

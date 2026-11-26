@@ -22,6 +22,24 @@ def test_resolve_clears_drift(
     assert fd.check().ok
 
 
+def test_resolve_records_its_note(repo: GitRepo, fd: FreshdagsApi) -> None:
+    setup_api_doc(repo, fd)
+
+    fd.resolve("docs/api.md", note="internal refactor, API unchanged")
+
+    assert repo.graph()["nodes"]["docs/api.md"]["resolved"]["note"] == (
+        "internal refactor, API unchanged"
+    )
+
+
+def test_resolve_all_records_its_note(repo: GitRepo, fd: FreshdagsApi) -> None:
+    setup_api_doc(repo, fd)
+    repo.commit({"src/api.py": "api v2"}, date=T2)
+
+    assert fd.resolve_all(note="formatting only") == ["docs/api.md"]
+    assert repo.graph()["nodes"]["docs/api.md"]["resolved"]["note"] == "formatting only"
+
+
 def test_resolve_records_who_when_commit_and_reviewed_content(
     repo: GitRepo, fd: FreshdagsApi, time_machine: TimeMachineFixture
 ) -> None:

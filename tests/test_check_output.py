@@ -107,7 +107,14 @@ def test_render_names_diff_and_next_step() -> None:
     text = render_check(report)
 
     assert "git diff aaaaaaa..HEAD -- src/api.py" in text
-    assert "freshdags resolve docs/api.md" in text
+    assert "then: read docs/api.md against the diff and fix what it made wrong," in text
+    assert 'only if it is still correct: freshdags resolve docs/api.md --note "why"' in text
+
+
+def test_render_forbids_resolving_to_pass() -> None:
+    text = render_check(CheckReport(rev=None, docs_checked=1, drift=[drift()]))
+
+    assert text.endswith("Never resolve just to make this check, a hook or CI pass.")
 
 
 def test_render_diff_ends_at_checked_revision() -> None:

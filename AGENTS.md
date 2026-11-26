@@ -4,24 +4,16 @@ freshdags is a CLI that flags docs that may have drifted from the files they des
 
 ## Keeping docs fresh
 
-This repository records which docs depend on which files in `freshdags.json`
-(see https://github.com/mkcode92/freshdags).
+`freshdags.json` records which docs describe which files (https://github.com/mkcode92/freshdags).
 
-- After changing files, run `freshdags check`. It lists every doc that may have
-  drifted, with a `git diff` command for each changed source.
-- For each drifted doc: run that `git diff`, read the doc, and fix every statement,
-  example and command output the change made wrong. Run commands to see their
-  output; do not guess it.
-- Run `freshdags resolve DOC` only after reading the doc and finding it still
-  correct. Never resolve just to make the check pass.
-- When a doc starts describing another file, record it: `freshdags add DOC SOURCE`.
-- Never edit `freshdags.json` by hand, and never skip the pre-commit hook
-  (`git commit --no-verify`).
-- A passing `freshdags check` means every doc was updated or reviewed after its
-  sources changed, not that it is correct. Its content is your responsibility.
+- When `freshdags check` or the pre-commit hook reports drift, read each doc against its
+  `git diff` and fix what the change made wrong. Run commands to see their output; do not guess.
+- Resolve only a doc you read and found still correct: `freshdags resolve DOC --note "why"`.
+  Never resolve just to make a check, hook or CI pass.
+- When a doc starts describing another file: `freshdags add DOC SOURCE`.
+- Never edit `freshdags.json` by hand or commit with `--no-verify`.
 
-In this repository, run freshdags from the working copy: `uv run freshdags check`.
-Settings are `on-change`, so saving a file is enough to flag or resolve.
+Here, run freshdags from the working copy: `uv run freshdags check`. Settings are `on-change`, so saving a file is enough to flag or resolve.
 
 ## Development
 

@@ -98,17 +98,18 @@ class FreshdagsApi(ABC):
     # its changed sources at once.
 
     @abstractmethod
-    def resolve(self, *docs: str) -> list[str]:
+    def resolve(self, *docs: str, note: str | None = None) -> list[str]:
         """Record that each doc was reviewed and is up to date. Returns the docs resolved.
 
-        Does not flag the docs that depend on them.
+        `note` says why the doc is still correct; the CLI requires one. The record also holds
+        the content of each source as reviewed. Does not flag the docs that depend on them.
 
         Raises:
             UnknownNodeError: a doc is not in the graph.
         """
 
     @abstractmethod
-    def resolve_all(self) -> list[str]:
+    def resolve_all(self, note: str | None = None) -> list[str]:
         """Resolve every drifted doc, when the change needed no doc update.
 
         Returns the docs resolved.
