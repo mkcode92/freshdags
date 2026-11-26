@@ -72,10 +72,12 @@ freshdags show src/api/interface.py   # its sources and dependents
 `(!)` marks a doc that may have drifted, `(*)` a source that changed after the doc it is listed under was up to date:
 
 ```text
-docs/api.md (!)
-  src/api/interface.py (*)
 README.md
   docs/api.md (!)
+docs/api.md (!)
+  src/api/interface.py (*)
+
+(!) may have drifted   (*) changed after the doc it is listed for
 ```
 
 **Draw the graph.** Docs are on the left and the code they describe on the right, as in a file tree; arrows point from source to doc, the way changes ripple. Drifted docs are red, the sources whose changes made them drift are amber, and a doc that is both is red with a thick amber border. `ext:` nodes have a dashed outline.
@@ -137,9 +139,9 @@ The hook runs `freshdags check --uncommitted`: the changes you are committing co
 |---|---|
 | `freshdags add DOC SOURCE...` | Record that DOC depends on each SOURCE. Creates `freshdags.json` if needed. Refuses missing or untracked files, self-dependencies and cycles. |
 | `freshdags rm DOC SOURCE...` | Remove those dependencies, and nodes no longer connected to anything. |
-| `freshdags show [NODE] [--format FORMAT] [-o FILE]` | Print the graph, or one node's sources and dependents. The formats `mermaid`, `markdown`, `dot` and `html` draw the whole graph with drift highlighted. |
+| `freshdags show [NODE] [--format FORMAT] [-o FILE]` | Print the graph, or one node's sources and dependents, with drift marked `(!)` and `(*)`. The formats `mermaid`, `markdown`, `dot` and `html` draw the whole graph with drift highlighted. |
 | `freshdags check [REV] [--json] [--uncommitted]` | List every doc that may have drifted. Without `REV`, uses the current `freshdags.json`, the history up to `HEAD` and, in `on-change` mode, uncommitted changes; with `REV`, evaluates the graph as of that commit. `--uncommitted` counts uncommitted changes as a commit made now, for pre-commit hooks. |
-| `freshdags resolve DOC...` | Mark docs as drift-free after reviewing them. |
+| `freshdags resolve DOC...` | Mark docs as drift-free after reviewing them. Records the content of their sources as reviewed. |
 | `freshdags resolve --all` | Resolve every drifted doc, when the change needed no doc update. |
 | `freshdags flag NODE [--note TEXT]` | Record that a source changed, flagging the docs that depend on it. |
 | `freshdags configure [--auto-flag MODE] [--auto-resolve MODE]` | Show the settings, or change them. |
