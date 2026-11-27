@@ -124,7 +124,7 @@ docs/api.md (!)
 (!) may have drifted   (*) changed after the doc it is listed for
 ```
 
-To draw it, write it to a file; the extension picks the format (or use `--format`):
+To draw it, write it to a file; the extension picks the format (or use `--format`)[^cdn]:
 
 ```sh
 freshdags show -o graph.md     # Mermaid in a Markdown block, drawn by GitHub and GitLab
@@ -150,6 +150,8 @@ flowchart RL
   classDef changed fill:#fff8c5,stroke:#bf8700,stroke-width:1.5px,color:#1f2328
   class n3 changed
 ```
+
+[^cdn]: The HTML page loads Mermaid from the jsDelivr CDN, so viewing it needs a network connection.
 
 ## What to track
 
