@@ -61,6 +61,18 @@ def test_flag_note_is_reported(
 
     assert drift.note == "API v2 released"
     assert drift.source_changed_commit is None
+    assert drift.flagged
+
+
+def test_uncommitted_save_is_not_a_flag(repo: GitRepo, fd: FreshdagsApi) -> None:
+    setup_api_doc(repo, fd)
+    repo.set_setting("auto-flag", "on-change")
+    repo.save("src/api.py", "api v2", at=T2)
+
+    drift = fd.check().drift[0]
+
+    assert drift.source_changed_commit is None
+    assert not drift.flagged
 
 
 def test_report_remembers_revision(repo: GitRepo, fd: FreshdagsApi) -> None:
@@ -95,7 +107,14 @@ def test_render_names_diff_and_next_step() -> None:
     text = render_check(report)
 
     assert "git diff aaaaaaa..HEAD -- src/api.py" in text
-    assert "freshdags resolve docs/api.md" in text
+    assert "then: update docs/api.md where the change made it wrong," in text
+    assert 'only if it is still correct: freshdags resolve docs/api.md --note "why"' in text
+
+
+def test_render_forbids_resolving_to_pass() -> None:
+    text = render_check(CheckReport(rev=None, docs_checked=1, drift=[drift()]))
+
+    assert text.endswith("Never resolve just to make this check, a hook or CI pass.")
 
 
 def test_render_diff_ends_at_checked_revision() -> None:
@@ -105,14 +124,35 @@ def test_render_diff_ends_at_checked_revision() -> None:
 
 
 def test_render_external_source_shows_note_instead_of_diff() -> None:
-    flagged = drift(source="ext:stripe-api", source_changed_commit=None, note="API v2 released")
+    flagged = drift(
+        source="ext:stripe-api", source_changed_commit=None, note="API v2 released", flagged=True
+    )
     report = CheckReport(rev=None, docs_checked=1, drift=[flagged])
 
     text = render_check(report)
 
-    assert "ext:stripe-api" in text
-    assert "API v2 released" in text
+    assert "ext:stripe-api flagged: API v2 released" in text
     assert "git diff" not in text
+
+
+def test_render_uncommitted_save_diffs_working_tree() -> None:
+    saved = drift(source_changed_commit=None)
+
+    text = render_check(CheckReport(rev=None, docs_checked=1, drift=[saved]))
+
+    assert "src/api.py changed since aaaaaaa (uncommitted)" in text
+    assert "git diff aaaaaaa -- src/api.py" in text
+    assert "flagged" not in text
+
+
+def test_render_uncommitted_save_after_saved_doc_diffs_against_head() -> None:
+    saved = drift(source_changed_commit=None, doc_fresh_commit=None)
+
+    text = render_check(CheckReport(rev=None, docs_checked=1, drift=[saved]))
+
+    assert "src/api.py changed (uncommitted)" in text
+    assert "git diff HEAD -- src/api.py" in text
+    assert "flagged" not in text
 
 
 def test_render_summary_when_fresh() -> None:

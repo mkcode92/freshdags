@@ -10,10 +10,14 @@ from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, field_validato
 GRAPH_FILE = "freshdags.json"
 EXTERNAL_PREFIX = "ext:"
 
-GRAPH_VERSION = 1
-"""Format version of freshdags.json. Bump it only for breaking changes, and add an upgrade."""
+GRAPH_VERSION = 2
+"""Format version of freshdags.json. Bump it for every change an older freshdags cannot read,
+and add an upgrade."""
 
-UPGRADES: dict[int, Callable[[dict[str, Any]], dict[str, Any]]] = {}
+UPGRADES: dict[int, Callable[[dict[str, Any]], dict[str, Any]]] = {
+    # 1 -> 2: resolve records gain `sources`. Old records have none and stay time-based.
+    1: lambda data: data,
+}
 """`UPGRADES[n]` turns the raw data of a version-n file into version n + 1."""
 
 
@@ -73,6 +77,11 @@ class Resolution(Record):
 
     commit: str | None
     """HEAD at the time of resolving; None in a repository without commits."""
+    sources: dict[str, str] = {}
+    """Git blob hash of each source file as reviewed, from the working tree. A later change
+    whose content is exactly this was reviewed, even if it is committed after the resolve."""
+    note: str | None = None
+    """Why the doc is still correct, for whoever reviews the resolve."""
 
 
 class Flag(Record):
@@ -176,6 +185,29 @@ class NodeView(BaseModel):
     """What depends on this node."""
 
 
+class Commit(BaseModel):
+    sha: str
+    at: AwareDatetime
+    """Author date."""
+    author: str
+    subject: str
+    """First line of the message."""
+
+
+class NodeStatus(BaseModel):
+    """What is known about one node, besides its edges."""
+
+    name: str
+    last_commit: Commit | None
+    """Latest commit touching the file; None for external and never-committed files."""
+    saved_at: AwareDatetime | None
+    """Modification time of the file's uncommitted changes, if it has any."""
+    resolved: Resolution | None
+    """Last `freshdags resolve`."""
+    flagged: Flag | None
+    """Last `freshdags flag`."""
+
+
 class Drift(BaseModel):
     """`doc` is stale: `source` changed after the doc was last up to date. A doc with
     several changed sources has one Drift per source, so the report shows them all."""
@@ -191,6 +223,9 @@ class Drift(BaseModel):
     """Commit that changed the source; None for a `flag` or an uncommitted save."""
     note: str | None
     """Note from `freshdags flag`, if the change was flagged by hand."""
+    flagged: bool = False
+    """The change was recorded by `freshdags flag`; otherwise git saw it, as a commit or,
+    when `source_changed_commit` is None, an uncommitted save."""
 
 
 class CheckReport(BaseModel):

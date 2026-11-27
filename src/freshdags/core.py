@@ -26,11 +26,13 @@ from freshdags.models import (
     GRAPH_FILE,
     GRAPH_VERSION,
     CheckReport,
+    Commit,
     Drift,
     Flag,
     Graph,
     Mode,
     Node,
+    NodeStatus,
     NodeView,
     Resolution,
     Settings,
@@ -61,6 +63,12 @@ class Moment:
     at: datetime
     commit: str | None = None
     note: str | None = None
+    flagged: bool = False
+    """Recorded by `freshdags flag`, not seen by git."""
+    author: str | None = None
+    """Author of the commit, if it was one."""
+    subject: str | None = None
+    """First line of the commit message, if it was one."""
 
 
 def latest(*moments: Moment | None) -> Moment | None:
@@ -166,6 +174,30 @@ class Freshdags(FreshdagsApi):
             dependents=sorted(doc for doc, n in graph.nodes.items() if name in n.depends_on),
         )
 
+    def node_status(self) -> list[NodeStatus]:
+        graph = self._load()
+        history = self._history(graph, None, graph.settings, saved_at=None)
+        files = sorted(name for name in graph.nodes if not is_external(name))
+        saved = history.saved or self._saved(files, None)
+        result = []
+        for name, node in sorted(graph.nodes.items()):
+            last = history.last.get(name)
+            commit = (
+                Commit(sha=last.commit, at=last.at, author=last.author, subject=last.subject)
+                if last and last.commit and last.author is not None and last.subject is not None
+                else None
+            )
+            result.append(
+                NodeStatus(
+                    name=name,
+                    last_commit=commit,
+                    saved_at=saved[name].at if name in saved else None,
+                    resolved=node.resolved,
+                    flagged=node.flagged,
+                )
+            )
+        return result
+
     # --- drift ------------------------------------------------------------------------------
 
     def check(self, rev: str | None = None, *, uncommitted: bool = False) -> CheckReport:
@@ -190,6 +222,8 @@ class Freshdags(FreshdagsApi):
                 changed = self._changed(source, graph.nodes[source], history, settings.auto_flag)
                 if changed is None or not self._is_newer(changed, fresh):
                     continue
+                if self._was_reviewed(node, source, changed, rev):
+                    continue
                 drift.append(
                     Drift(
                         doc=doc,
@@ -199,22 +233,26 @@ class Freshdags(FreshdagsApi):
                         source_changed_at=changed.at,
                         source_changed_commit=changed.commit,
                         note=changed.note,
+                        flagged=changed.flagged,
                     )
                 )
         return CheckReport(rev=rev, docs_checked=docs, drift=drift)
 
-    def resolve(self, *docs: str) -> list[str]:
+    def resolve(self, *docs: str, note: str | None = None) -> list[str]:
         graph = self._load()
         names = [self._require_node(graph, doc) for doc in docs]
-        record = Resolution(at=self._now(), by=self._user(), commit=self._head())
+        at, by, head = self._now(), self._user(), self._head()
         for name in names:
-            graph.nodes[name].resolved = record
+            files = [s for s in graph.nodes[name].depends_on if not is_external(s)]
+            graph.nodes[name].resolved = Resolution(
+                at=at, by=by, commit=head, sources=self._working_hashes(files), note=note
+            )
         self._save(graph)
         return names
 
-    def resolve_all(self) -> list[str]:
+    def resolve_all(self, note: str | None = None) -> list[str]:
         drifted = self.check().drifted_docs
-        return self.resolve(*drifted) if drifted else []
+        return self.resolve(*drifted, note=note) if drifted else []
 
     def flag(self, node: str, note: str | None = None) -> None:
         graph = self._load()
@@ -242,7 +280,7 @@ class Freshdags(FreshdagsApi):
         return latest(
             history.last.get(source) if watches_commits(mode) else None,
             history.saved.get(source) if watches_saves(mode) else None,
-            Moment(flagged.at, None, flagged.note) if flagged else None,
+            Moment(flagged.at, None, flagged.note, flagged=True) if flagged else None,
         )
 
     # --- git --------------------------------------------------------------------------------
@@ -261,13 +299,15 @@ class Freshdags(FreshdagsApi):
             batch = paths[start : start + self.log_batch_size]
             log = self.git.run(
                 "-c", "core.quotepath=off", "--literal-pathspecs",
-                "log", "--format=@@%H %aI", "--name-only", tip, "--", *batch,
+                "log", "--format=@@%H%x1f%aI%x1f%an%x1f%s", "--name-only", tip, "--", *batch,
             )  # fmt: skip
             moment: Moment | None = None
             for line in log.splitlines():
                 if line.startswith("@@"):
-                    sha, date = line[2:].split(" ")
-                    moment = Moment(datetime.fromisoformat(date), sha)
+                    sha, date, author, subject = line[2:].split("\x1f", 3)
+                    moment = Moment(
+                        datetime.fromisoformat(date), sha, author=author, subject=subject
+                    )
                 elif line and moment:
                     if line not in last or moment.at > last[line].at:
                         last[line] = moment
@@ -315,6 +355,39 @@ class Freshdags(FreshdagsApi):
         except GitError:
             return False
         return True
+
+    def _was_reviewed(self, doc: Node, source: str, changed: Moment, rev: str | None) -> bool:
+        """Whether the doc's last resolve reviewed exactly the content `changed` produced.
+
+        A resolve records the content it reviewed. Committing that content later makes the
+        change newer than the resolve, but it is the same content, so it needs no review.
+        A flag changes no content, so it is never covered.
+        """
+        reviewed = doc.resolved.sources.get(source) if doc.resolved else None
+        if reviewed is None or changed.flagged:
+            return False
+        if changed.commit is None:  # an uncommitted save
+            current = self._working_hashes([source]).get(source)
+        else:
+            try:
+                current = self.git.run(
+                    "rev-parse", "--verify", "--quiet", f"{rev or 'HEAD'}:{source}"
+                )
+            except GitError:
+                current = None
+        return current == reviewed
+
+    def _working_hashes(self, paths: list[str]) -> dict[str, str]:
+        """Git blob hash of each existing file among `paths`, as in the working tree.
+
+        `git hash-object` applies the same filters (such as line endings) as `git add`, so the
+        hash matches the blob a commit of the file would contain.
+        """
+        files = [p for p in paths if (self.root / p).is_file()]
+        if not files:
+            return {}
+        out = self.git.run("--literal-pathspecs", "hash-object", "--", *files)
+        return dict(zip(files, out.splitlines(), strict=True))
 
     def _tracked(self, paths: list[str]) -> set[str]:
         """The subset of `paths` that git tracks (committed or staged)."""

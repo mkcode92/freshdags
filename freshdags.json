@@ -1,17 +1,27 @@
 {
   "nodes": {
+    "AGENTS.md": {
+      "depends_on": [
+        "src/freshdags/cli.py"
+      ]
+    },
     "Readme.md": {
       "depends_on": [
         "src/freshdags/api.py",
         "src/freshdags/cli.py",
         "src/freshdags/models.py",
         "src/freshdags/render.py"
-      ]
+      ],
+      "resolved": {
+        "at": "2026-11-26T12:54:25Z",
+        "by": "Markus Kobold",
+        "commit": "99cbdfbad0b96b99301b6bb06090c2e8a2c9dbc4"
+      }
     }
   },
   "settings": {
     "auto-flag": "on-change",
     "auto-resolve": "on-change"
   },
-  "version": 1
+  "version": 2
 }
