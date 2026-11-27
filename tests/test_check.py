@@ -1,8 +1,9 @@
-"""`check`: a doc drifts when one of its sources changed after the doc was last up to date.
+"""`check`: a doc drifts when one of its sources has a change the doc has not reviewed.
 
 Default settings are `auto-flag: on-commit` and `auto-resolve: on-commit`, so a commit to a
 source counts as a change and a commit to a doc counts as resolving it. A doc also counts as up to
-date from the commit that created it. Times are commit author dates, which survive rebases.
+date from the commit that created it. A doc has seen every commit its own commits descend from;
+branches are in test_branches.py.
 """
 
 from support import T1, T2, T3, T4, GitRepo, setup_api_doc
@@ -43,7 +44,7 @@ def test_unrelated_change_does_not_flag(repo: GitRepo, fd: FreshdagsApi) -> None
 
 
 def test_rebase_does_not_flag(repo: GitRepo, fd: FreshdagsApi) -> None:
-    """A rebase rewrites committer dates; author dates keep the real order."""
+    """A rebase rewrites the commits; the doc update still descends from the source change."""
     setup_api_doc(repo, fd)
     repo.commit({"src/api.py": "api v2"}, date=T2, committer_date=T4)
     repo.commit({"docs/api.md": "doc v2"}, date=T3, committer_date=T4)

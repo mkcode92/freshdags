@@ -124,7 +124,7 @@ docs/api.md (!)
 (!) may have drifted   (*) changed after the doc it is listed for
 ```
 
-To draw it, write it to a file; the extension picks the format (or use `--format`):
+To draw it, write it to a file; the extension picks the format (or use `--format`)[^cdn]:
 
 ```sh
 freshdags show -o graph.md     # Mermaid in a Markdown block, drawn by GitHub and GitLab
@@ -150,6 +150,8 @@ flowchart RL
   classDef changed fill:#fff8c5,stroke:#bf8700,stroke-width:1.5px,color:#1f2328
   class n3 changed
 ```
+
+[^cdn]: The HTML page loads Mermaid from the jsDelivr CDN, so viewing it needs a network connection.
 
 ## What to track
 
@@ -199,11 +201,12 @@ Settings live in `freshdags.json`. Show them with `freshdags configure`, change 
 
 ## How it works
 
-freshdags keeps your dependencies as a graph (a DAG) in `freshdags.json`. The rule is: **a doc must be at least as new as each of its sources.** If a source changed after the doc was last up to date, the doc is flagged until someone resolves it.
+freshdags keeps your dependencies as a graph (a DAG) in `freshdags.json`. The rule is: **a doc must have reviewed every change to its sources.** A doc reviews a change by being created, updated (as `auto-resolve` allows) or resolved after it; until then, it is flagged.
 
-- **Times come from git:** a file's change time is the **author date** of the last commit that touched it. Author dates survive rebases, so rewriting a branch does not raise false flags. Because commits are the source of truth, a doc can be updated in a later commit of the same pull request.
-- **A doc is up to date** from the commit that created it, from its last commit or save (as `auto-resolve` allows), or from its last `resolve` — whichever is latest. The `git diff` hint in `check` starts at that commit.
-- **A resolve covers the content you reviewed.** It records the git blob hash of each source as it is in your working tree. A change to exactly that content needs no new review, even though committing it later makes it newer than the resolve. Any other change, and any `flag`, needs one.
+- **Commits are ordered by history, not by date.** A doc has seen a commit when one of the doc's own commits, or the commit a `resolve` was made on, descends from it. So a doc can be updated in a later commit of the same pull request, and a source change from another branch is flagged even when the doc was edited on `main` after the change was written but before it was merged or rebased. A merge commit changes a file only where its result differs from git's automatic merge, as when someone resolves a conflict: a source rewritten that way is flagged, and a doc edited that way counts as updated.
+- **Saves and flags are ordered by time**, because they have no place in the history: an uncommitted save by its file's modification time, `flag` and `resolve` by the current time.
+- **A resolve covers the content you reviewed.** It records the git blob hash of each source as it is in your working tree. A change to exactly that content needs no new review, even when it is committed later, or that commit is rebased or squash-merged. Any other change, and any `flag`, needs one.
+- **The `git diff` hint** in `check` starts at the doc's latest commit or resolve.
 - **Changes ripple, resolves do not.** A real change to a doc flags the docs that depend on it. Resolving a doc only states that it is still correct, so its dependents stay as they are.
 
 ### The graph file
@@ -232,12 +235,13 @@ freshdags keeps your dependencies as a graph (a DAG) in `freshdags.json`. The ru
 
 A resolve keeps its `note`, and in `sources` the reviewed content of each source file as a git blob hash; external sources have none. Review both in pull requests: a resolve is a claim that the doc is still correct.
 
-**Format versions.** `version` changes whenever an older freshdags could not read the file. A newer freshdags reads older files and upgrades them; the next command that writes the file saves the new format, which shows up as a normal diff. An older freshdags refuses a newer file and asks you to upgrade. Version 2 (freshdags 0.2) added `sources` to resolves; resolves from version-1 files have none, so they cover changes by time only.
+**Format versions.** `version` changes whenever an older freshdags could not read the file. A newer freshdags reads older files and upgrades them; the next command that writes the file saves the new format, which shows up as a normal diff. An older freshdags refuses a newer file and asks you to upgrade. Version 2 (freshdags 0.2) added `sources` to resolves; resolves from version-1 files have none, so they cover only the commits they were made on.
 
 ## Known limitations
 
-- `resolve` and `flag` record the current wall-clock time, while commits carry the author's machine time. Clock skew between machines can misorder events that happen within minutes of each other.
+- A `flag` records the current wall-clock time and is compared with the doc's commit dates, which come from the author's machine. Clock skew between machines can misorder a flag and a doc update made within minutes of each other.
 - In `on-change` mode, file modification times are compared with commit author dates, with the same caveat.
+- Seeing what a merge changed while resolving conflicts needs git 2.36 or later. With an older git, `check` warns and does not see those changes.
 
 ## Planned
 

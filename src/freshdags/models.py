@@ -209,7 +209,7 @@ class NodeStatus(BaseModel):
 
 
 class Drift(BaseModel):
-    """`doc` is stale: `source` changed after the doc was last up to date. A doc with
+    """`doc` may be stale: `source` has a change the doc has not reviewed. A doc with
     several changed sources has one Drift per source, so the report shows them all."""
 
     doc: str
@@ -217,10 +217,14 @@ class Drift(BaseModel):
     doc_fresh_at: AwareDatetime | None
     """When the doc was last up to date; None if never (e.g. an unresolved external doc)."""
     doc_fresh_commit: str | None
-    """Commit at which the doc was last up to date; start of the review diff."""
+    """Commit at which the doc was last up to date; start of the review diff. None for a
+    save, and for a resolve whose commit no longer exists."""
     source_changed_at: AwareDatetime
+    """Author date of the commit, or the time of the save or flag. A commit from another
+    branch can be older than `doc_fresh_at` and still be a change the doc has not seen."""
     source_changed_commit: str | None
-    """Commit that changed the source; None for a `flag` or an uncommitted save."""
+    """Newest commit that changed the source and that the doc has not seen; None for a
+    `flag` or an uncommitted save."""
     note: str | None
     """Note from `freshdags flag`, if the change was flagged by hand."""
     flagged: bool = False
