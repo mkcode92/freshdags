@@ -203,7 +203,7 @@ Settings live in `freshdags.json`. Show them with `freshdags configure`, change 
 
 freshdags keeps your dependencies as a graph (a DAG) in `freshdags.json`. The rule is: **a doc must have reviewed every change to its sources.** A doc reviews a change by being created, updated (as `auto-resolve` allows) or resolved after it; until then, it is flagged.
 
-- **Commits are ordered by history, not by date.** A doc has seen a commit when one of the doc's own commits, or the commit a `resolve` was made on, descends from it. So a doc can be updated in a later commit of the same pull request, and a source change from another branch is flagged even when the doc was edited on `main` after the change was written but before it was merged or rebased.
+- **Commits are ordered by history, not by date.** A doc has seen a commit when one of the doc's own commits, or the commit a `resolve` was made on, descends from it. So a doc can be updated in a later commit of the same pull request, and a source change from another branch is flagged even when the doc was edited on `main` after the change was written but before it was merged or rebased. A merge commit changes a file only where its result differs from git's automatic merge, as when someone resolves a conflict: a source rewritten that way is flagged, and a doc edited that way counts as updated.
 - **Saves and flags are ordered by time**, because they have no place in the history: an uncommitted save by its file's modification time, `flag` and `resolve` by the current time.
 - **A resolve covers the content you reviewed.** It records the git blob hash of each source as it is in your working tree. A change to exactly that content needs no new review, even when it is committed later, or that commit is rebased or squash-merged. Any other change, and any `flag`, needs one.
 - **The `git diff` hint** in `check` starts at the doc's latest commit or resolve.
@@ -241,6 +241,7 @@ A resolve keeps its `note`, and in `sources` the reviewed content of each source
 
 - A `flag` records the current wall-clock time and is compared with the doc's commit dates, which come from the author's machine. Clock skew between machines can misorder a flag and a doc update made within minutes of each other.
 - In `on-change` mode, file modification times are compared with commit author dates, with the same caveat.
+- Seeing what a merge changed while resolving conflicts needs git 2.36 or later. With an older git, `check` warns and does not see those changes.
 
 ## Planned
 

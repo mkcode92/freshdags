@@ -87,7 +87,9 @@ class FreshdagsApi(ABC):
         resolved after it:
         - A commit counts as reviewed when the doc has seen it: a commit of the doc, or the
           commit a resolve was made on, descends from it. Ancestry, not dates, so rebases and
-          merges cannot reorder a change and a doc update.
+          merges cannot reorder a change and a doc update. A merge commit changes a file
+          only where it differs from git's automatic merge, as when resolving a conflict
+          (seen with git 2.36 or later).
         - Saves and flags have no place in the history, so they are ordered by time.
         - Any change that leaves a source exactly as a resolve reviewed it is reviewed.
 

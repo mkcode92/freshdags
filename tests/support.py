@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from freshdags.api import FreshdagsApi
-from freshdags.git import Git
+from freshdags.git import Git, GitError
 from freshdags.models import GRAPH_FILE
 
 T1 = "2026-01-01T10:00:00+00:00"
@@ -67,17 +67,30 @@ class GitRepo(Git):
     def checkout(self, branch: str, *, new: bool = False) -> None:
         self.run("checkout", "--quiet", *(["-b"] if new else []), branch)
 
-    def merge(self, branch: str, *, date: str, squash: bool = False) -> str:
+    def merge(
+        self,
+        branch: str,
+        *,
+        date: str,
+        squash: bool = False,
+        resolve: dict[str, str] | None = None,
+    ) -> str:
         """Merge `branch` into the current branch at ISO `date`, with a merge commit, or as
-        one new commit with `squash`. Returns the commit sha."""
+        one new commit with `squash`. Returns the commit sha.
+
+        `resolve` (path -> content) is written into the result before it is committed, as
+        when someone settles a conflict. Without it, a conflict fails the merge.
+        """
         dates = {"GIT_AUTHOR_DATE": date, "GIT_COMMITTER_DATE": date}
-        if squash:
-            self.run("merge", "--squash", "--quiet", branch, env=dates)
-            self.run("commit", "--quiet", "--message", f"squash {branch}", env=dates)
-        else:
-            self.run(
-                "merge", "--no-ff", "--quiet", "--message", f"merge {branch}", branch, env=dates
-            )
+        how = "--squash" if squash else "--no-ff"
+        try:
+            self.run("merge", "--quiet", "--no-commit", how, branch, env=dates)
+        except GitError:
+            if resolve is None:
+                raise
+        for path, content in (resolve or {}).items():
+            self.write(path, content)
+        self.run("commit", "--quiet", "--message", f"merge {branch}", env=dates)
         return self.run("rev-parse", "HEAD")
 
     def rebase(self, onto: str, *, date: str) -> None:

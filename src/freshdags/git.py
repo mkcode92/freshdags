@@ -2,6 +2,7 @@
 
 import logging
 import os
+import re
 import subprocess
 from collections.abc import Mapping
 from pathlib import Path
@@ -51,3 +52,10 @@ class Git:
         if result.returncode != 0:
             raise GitError(f"git {' '.join(args)} failed: {result.stderr.strip()}")
         return result.stdout.strip() if strip else result.stdout
+
+    def version(self) -> tuple[int, int]:
+        """(major, minor) of the installed git, e.g. (2, 36) for `git version 2.36.1`."""
+        found = re.search(r"(\d+)\.(\d+)", self.run("version"))
+        if not found:
+            raise GitError("Cannot read the git version.")
+        return int(found[1]), int(found[2])

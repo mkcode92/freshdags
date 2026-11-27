@@ -2,8 +2,10 @@
 
 import getpass
 import json
+import logging
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from functools import cached_property
 from pathlib import Path
 from typing import Self
 
@@ -39,6 +41,8 @@ from freshdags.models import (
     is_external,
     upgrade,
 )
+
+log = logging.getLogger(__name__)
 
 
 def watches_commits(mode: Mode) -> bool:
@@ -85,7 +89,8 @@ class History:
     tip: str | None
     """The revision checked, or HEAD; None in a repository without commits."""
     commits: dict[str, list[Moment]]
-    """Every commit in the tip's history that touched each path, newest first (author date)."""
+    """Every commit in the tip's history that touched each path, newest first (author date).
+    A merge touched a path only where it changed it itself, as when resolving a conflict."""
     saved: dict[str, Moment]
     """Uncommitted changes, timed by file modification time. Empty when checking a rev."""
 
@@ -311,7 +316,8 @@ class Freshdags(FreshdagsApi):
     # A doc may have drifted when one of its sources has a change the doc has not reviewed:
     #
     # 1. A commit is reviewed when the doc has seen it: one of the doc's commits or resolves
-    #    descends from it. Ancestry, not dates, so rebases and merges cannot reorder it.
+    #    descends from it. Ancestry, not dates, so rebases and merges cannot reorder it. A
+    #    merge is a change of its own only where it differs from git's automatic merge.
     # 2. A save or a flag has no place in the history, so it is reviewed when the doc was
     #    updated after it, by time. A save of the doc likewise covers earlier commits.
     # 3. Any change is reviewed when it leaves the source exactly as a resolve reviewed it.
@@ -426,26 +432,52 @@ class Freshdags(FreshdagsApi):
     log_batch_size = 200
     """Paths per `git log` call. Windows limits a command line to 32,767 characters."""
 
+    merge_resolutions_since = (2, 36)
+    """The git version that added `--remerge-diff`."""
+
+    @cached_property
+    def _sees_merge_resolutions(self) -> bool:
+        """Whether git can list what a merge commit changed itself: where its result differs
+        from git's automatic merge of its parents, as when a conflict was resolved.
+
+        Without this, `git log` lists no files for a merge, so a source rewritten while
+        resolving a conflict would go unseen. A clean merge changes nothing itself, even
+        where both sides edited a file; those changes are in the commits it merged.
+        """
+        version = self.git.version()
+        if version >= self.merge_resolutions_since:
+            return True
+        log.warning(
+            "git %s cannot show what merges changed while resolving conflicts (needs %s), "
+            "so check does not see those changes. Please upgrade git.",
+            ".".join(map(str, version)),
+            ".".join(map(str, self.merge_resolutions_since)),
+        )
+        return False
+
     def _history(
         self, graph: Graph, rev: str | None, settings: Settings, saved_at: datetime | None
     ) -> History:
         paths = sorted(name for name in graph.nodes if not is_external(name))
         commits: dict[str, list[Moment]] = {}
         tip = rev or (self._head() and "HEAD")
+        merges = ["--diff-merges=remerge"] if self._sees_merge_resolutions else []
         for start in range(0, len(paths) if tip else 0, self.log_batch_size):
             batch = paths[start : start + self.log_batch_size]
-            log = self.git.run(
+            output = self.git.run(
                 "-c", "core.quotepath=off", "--literal-pathspecs",
-                "log", "--format=@@%H%x1f%aI%x1f%an%x1f%s", "--name-only", tip, "--", *batch,
+                "log", "--format=@@%H%x1f%aI%x1f%an%x1f%s", "--name-only", *merges, tip,
+                "--", *batch,
             )  # fmt: skip
+            wanted = set(batch)
             moment: Moment | None = None
-            for line in log.splitlines():
+            for line in output.splitlines():
                 if line.startswith("@@"):
                     sha, date, author, subject = line[2:].split("\x1f", 3)
                     moment = Moment(
                         datetime.fromisoformat(date), sha, author=author, subject=subject
                     )
-                elif line and moment:
+                elif moment and line in wanted:
                     commits.setdefault(line, []).append(moment)
         for touching in commits.values():
             touching.sort(key=lambda m: m.at, reverse=True)
