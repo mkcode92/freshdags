@@ -25,17 +25,25 @@ class Git:
         """Environment for every git call. Subclasses may override, e.g. to isolate config."""
         return dict(os.environ)
 
-    def run(self, *args: str, env: Mapping[str, str] | None = None, strip: bool = True) -> str:
+    def run(
+        self,
+        *args: str,
+        env: Mapping[str, str] | None = None,
+        strip: bool = True,
+        input: str | None = None,
+    ) -> str:
         """Run `git <args>` in the repository and return stdout.
 
         `env` adds to (or overrides) the base environment for this call only. `strip=False`
-        keeps leading whitespace, which is significant in some formats like `status`.
+        keeps leading whitespace, which is significant in some formats like `status`. `input`
+        is sent to stdin, for `--stdin` options that take more than a command line holds.
         """
         log.debug("git %s", " ".join(args))
         result = subprocess.run(
             ["git", *args],
             cwd=self.root,
             env={**self.env(), **(env or {})},
+            input=input,
             capture_output=True,
             text=True,
             encoding="utf-8",

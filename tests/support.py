@@ -64,6 +64,33 @@ class GitRepo(Git):
         self.run("commit", "--quiet", "--allow-empty", "--message", message, env=dates)
         return self.run("rev-parse", "HEAD")
 
+    def checkout(self, branch: str, *, new: bool = False) -> None:
+        self.run("checkout", "--quiet", *(["-b"] if new else []), branch)
+
+    def merge(self, branch: str, *, date: str, squash: bool = False) -> str:
+        """Merge `branch` into the current branch at ISO `date`, with a merge commit, or as
+        one new commit with `squash`. Returns the commit sha."""
+        dates = {"GIT_AUTHOR_DATE": date, "GIT_COMMITTER_DATE": date}
+        if squash:
+            self.run("merge", "--squash", "--quiet", branch, env=dates)
+            self.run("commit", "--quiet", "--message", f"squash {branch}", env=dates)
+        else:
+            self.run(
+                "merge", "--no-ff", "--quiet", "--message", f"merge {branch}", branch, env=dates
+            )
+        return self.run("rev-parse", "HEAD")
+
+    def rebase(self, onto: str, *, date: str) -> None:
+        """Rebase the current branch onto `onto`. The new commits keep their author dates."""
+        self.run("rebase", "--quiet", onto, env={"GIT_COMMITTER_DATE": date})
+
+    def forget(self, branch: str) -> None:
+        """Delete `branch` and every commit only it held, as after a squash merge and a fresh
+        clone."""
+        self.run("branch", "--quiet", "-D", branch)
+        self.run("reflog", "expire", "--expire=now", "--all")
+        self.run("gc", "--quiet", "--prune=now")
+
     def author_time(self, rev: str = "HEAD") -> datetime:
         return datetime.fromisoformat(self.run("show", "--no-patch", "--format=%aI", rev))
 

@@ -58,10 +58,12 @@ def counting_saves(mode: Mode) -> Mode:
 
 @dataclass(frozen=True)
 class Moment:
-    """A point in a node's history: when, and the commit if it was one."""
+    """A point in a node's history: a commit, an uncommitted save, a resolve or a flag."""
 
     at: datetime
     commit: str | None = None
+    """The commit it was, or (for a resolve) was made on. Only these have a place in git's
+    history; everything else can only be ordered by `at`."""
     note: str | None = None
     flagged: bool = False
     """Recorded by `freshdags flag`, not seen by git."""
@@ -78,14 +80,44 @@ def latest(*moments: Moment | None) -> Moment | None:
 
 @dataclass
 class History:
-    """What git knows about the graph's files, up to one revision."""
+    """What git knows about the graph's files, up to one revision: the tip."""
 
-    last: dict[str, Moment]
-    """Latest commit touching each path (by author date)."""
-    first: dict[str, Moment]
-    """Commit that created each path (earliest author date)."""
+    tip: str | None
+    """The revision checked, or HEAD; None in a repository without commits."""
+    commits: dict[str, list[Moment]]
+    """Every commit in the tip's history that touched each path, newest first (author date)."""
     saved: dict[str, Moment]
     """Uncommitted changes, timed by file modification time. Empty when checking a rev."""
+
+    def last_commit(self, path: str) -> Moment | None:
+        commits = self.commits.get(path)
+        return commits[0] if commits else None
+
+    def creating_commit(self, path: str) -> Moment | None:
+        """The oldest commit that touched `path`, which created it."""
+        commits = self.commits.get(path)
+        return commits[-1] if commits else None
+
+
+@dataclass(frozen=True)
+class DocReview:
+    """Everything that brought a doc up to date: the evidence against changes to its sources.
+
+    Each kind of change is held against the evidence that can order it (see `check`).
+    """
+
+    seen_commits: frozenset[str]
+    """Commits the doc was written or reviewed on: the commit that created it, its later
+    commits if `auto-resolve` counts them, and HEAD at its last resolve. The doc has seen
+    these commits and every commit they descend from."""
+    reviewed_content: dict[str, str]
+    """Git blob hash of each source as the last resolve reviewed it."""
+    saved: Moment | None
+    """The doc's uncommitted save, if `auto-resolve` counts saves. It has no place in the
+    history yet, so it covers the source commits made before it, by time."""
+    last_update: Moment | None
+    """The latest of the doc's commits, save and resolve, by time. Saves and flags of sources
+    are held against it, and the review diff starts at its commit."""
 
 
 class Freshdags(FreshdagsApi):
@@ -181,7 +213,7 @@ class Freshdags(FreshdagsApi):
         saved = history.saved or self._saved(files, None)
         result = []
         for name, node in sorted(graph.nodes.items()):
-            last = history.last.get(name)
+            last = history.last_commit(name)
             commit = (
                 Commit(sha=last.commit, at=last.at, author=last.author, subject=last.subject)
                 if last and last.commit and last.author is not None and last.subject is not None
@@ -211,31 +243,46 @@ class Freshdags(FreshdagsApi):
                 auto_resolve=counting_saves(settings.auto_resolve),
             )
         history = self._history(graph, rev, settings, saved_at=self._now() if uncommitted else None)
+        existing_resolve_commits = self._existing_commits(
+            [n.resolved.commit for n in graph.nodes.values() if n.resolved and n.resolved.commit]
+        )
         drift = []
         docs = 0
         for doc, node in sorted(graph.nodes.items()):
             if not node.depends_on:
                 continue
             docs += 1
-            fresh = self._fresh(doc, node, history, settings.auto_resolve)
+            review = self._review(
+                doc, node, history, settings.auto_resolve, existing_resolve_commits
+            )
+            unseen = (
+                self._newest_unseen_commits(node.depends_on, review, history)
+                if watches_commits(settings.auto_flag)
+                else {}
+            )
             for source in node.depends_on:
-                changed = self._changed(source, graph.nodes[source], history, settings.auto_flag)
-                if changed is None or not self._is_newer(changed, fresh):
-                    continue
-                if self._was_reviewed(node, source, changed, rev):
-                    continue
-                drift.append(
-                    Drift(
-                        doc=doc,
-                        source=source,
-                        doc_fresh_at=fresh.at if fresh else None,
-                        doc_fresh_commit=fresh.commit if fresh else None,
-                        source_changed_at=changed.at,
-                        source_changed_commit=changed.commit,
-                        note=changed.note,
-                        flagged=changed.flagged,
-                    )
+                changes = self._unreviewed_changes(
+                    source,
+                    graph.nodes[source],
+                    review,
+                    unseen.get(source),
+                    history,
+                    settings.auto_flag,
                 )
+                if change := latest(*changes):
+                    update = review.last_update
+                    drift.append(
+                        Drift(
+                            doc=doc,
+                            source=source,
+                            doc_fresh_at=update.at if update else None,
+                            doc_fresh_commit=update.commit if update else None,
+                            source_changed_at=change.at,
+                            source_changed_commit=change.commit,
+                            note=change.note,
+                            flagged=change.flagged,
+                        )
+                    )
         return CheckReport(rev=rev, docs_checked=docs, drift=drift)
 
     def resolve(self, *docs: str, note: str | None = None) -> list[str]:
@@ -261,27 +308,118 @@ class Freshdags(FreshdagsApi):
         self._save(graph)
 
     # --- freshness rules --------------------------------------------------------------------
+    # A doc may have drifted when one of its sources has a change the doc has not reviewed:
+    #
+    # 1. A commit is reviewed when the doc has seen it: one of the doc's commits or resolves
+    #    descends from it. Ancestry, not dates, so rebases and merges cannot reorder it.
+    # 2. A save or a flag has no place in the history, so it is reviewed when the doc was
+    #    updated after it, by time. A save of the doc likewise covers earlier commits.
+    # 3. Any change is reviewed when it leaves the source exactly as a resolve reviewed it.
 
     @staticmethod
-    def _fresh(doc: str, node: Node, history: History, mode: Mode) -> Moment | None:
-        """When `doc` was last up to date: created, edited (if edits resolve), or resolved."""
+    def _review(
+        doc: str, node: Node, history: History, mode: Mode, existing_resolve_commits: set[str]
+    ) -> DocReview:
+        """Collect what brought `doc` up to date, as `auto-resolve` (`mode`) allows.
+
+        The commit of a resolve counts only if it still exists: a rebase or squash merge
+        replaces it, and the commit it replaced may be gone. Its reviewed content still counts.
+        """
+        created = history.creating_commit(doc)
+        edits = history.commits.get(doc, []) if watches_commits(mode) else []
+        own_commits = [*edits, created] if created else edits
+        saved = history.saved.get(doc) if watches_saves(mode) else None
         resolved = node.resolved
-        return latest(
-            history.first.get(doc),
-            history.last.get(doc) if watches_commits(mode) else None,
-            history.saved.get(doc) if watches_saves(mode) else None,
-            Moment(resolved.at, resolved.commit) if resolved else None,
+        resolve = None
+        if resolved:
+            on_commit = resolved.commit if resolved.commit in existing_resolve_commits else None
+            resolve = Moment(resolved.at, on_commit)
+        return DocReview(
+            seen_commits=frozenset(m.commit for m in [*own_commits, resolve] if m and m.commit),
+            reviewed_content=resolved.sources if resolved else {},
+            saved=saved,
+            last_update=latest(*own_commits, saved, resolve),
         )
 
-    @staticmethod
-    def _changed(source: str, node: Node, history: History, mode: Mode) -> Moment | None:
-        """When `source` last changed: committed or saved (if those count), or flagged."""
+    def _unreviewed_changes(
+        self,
+        source: str,
+        node: Node,
+        review: DocReview,
+        unseen_commit: Moment | None,
+        history: History,
+        mode: Mode,
+    ) -> list[Moment]:
+        """The changes to `source` the doc has not reviewed, as `auto-flag` (`mode`) allows.
+
+        At most one of each kind: its newest commit the doc has not seen (`unseen_commit`, rule
+        1 is applied already), its uncommitted save, and its flag.
+        """
+        saved = history.saved.get(source) if watches_saves(mode) else None
         flagged = node.flagged
-        return latest(
-            history.last.get(source) if watches_commits(mode) else None,
-            history.saved.get(source) if watches_saves(mode) else None,
-            Moment(flagged.at, None, flagged.note, flagged=True) if flagged else None,
+        flag = Moment(flagged.at, None, flagged.note, flagged=True) if flagged else None
+        # Each change with the doc update that rule 2 holds it against: an unseen commit is in
+        # the history, so only a save of the doc (outside it) can still cover it by time.
+        held_against = [
+            (unseen_commit, review.saved),
+            (saved, review.last_update),
+            (flag, review.last_update),
+        ]
+        return [
+            change
+            for change, update in held_against
+            if change
+            and self._is_after(change, update)
+            and not self._leaves_reviewed_content(source, change, review, history)
+        ]
+
+    def _newest_unseen_commits(
+        self, sources: list[str], review: DocReview, history: History
+    ) -> dict[str, Moment]:
+        """For each source with commits the doc has not seen, the newest of them (rule 1)."""
+        seen = review.seen_commits
+        candidates = {
+            source: [m for m in history.commits.get(source, []) if m.commit not in seen]
+            for source in sources
+        }
+        unseen = self._not_seen_from(
+            seen,
+            {m.commit for moments in candidates.values() for m in moments if m.commit},
+            history.tip,
+            paths=[source for source, moments in candidates.items() if moments],
         )
+        newest = {
+            source: next((m for m in moments if m.commit in unseen), None)
+            for source, moments in candidates.items()
+        }
+        return {source: moment for source, moment in newest.items() if moment}
+
+    @staticmethod
+    def _is_after(change: Moment, update: Moment | None) -> bool:
+        """Whether `change` happened after `update` by time; always, if there was none.
+
+        Rule 2. A tie counts as reviewed: `check --uncommitted` gives all saves the same time,
+        as one pending commit.
+        """
+        return update is None or change.at > update.at
+
+    def _leaves_reviewed_content(
+        self, source: str, change: Moment, review: DocReview, history: History
+    ) -> bool:
+        """Whether `source`, as `change` left it, is exactly what the last resolve reviewed.
+
+        Rule 3. A resolve reviews the working tree, so committing that content later, or
+        rebasing or squashing the commit, makes a new commit that needs no new review. A flag
+        changes no content, so it is never covered this way.
+        """
+        reviewed = review.reviewed_content.get(source)
+        if reviewed is None or change.flagged:
+            return False
+        if change.commit is None:  # an uncommitted save
+            content = self._working_hashes([source]).get(source)
+        else:
+            content = self._committed_content(source, history.tip)
+        return content == reviewed
 
     # --- git --------------------------------------------------------------------------------
 
@@ -292,8 +430,7 @@ class Freshdags(FreshdagsApi):
         self, graph: Graph, rev: str | None, settings: Settings, saved_at: datetime | None
     ) -> History:
         paths = sorted(name for name in graph.nodes if not is_external(name))
-        last: dict[str, Moment] = {}
-        first: dict[str, Moment] = {}
+        commits: dict[str, list[Moment]] = {}
         tip = rev or (self._head() and "HEAD")
         for start in range(0, len(paths) if tip else 0, self.log_batch_size):
             batch = paths[start : start + self.log_batch_size]
@@ -309,13 +446,12 @@ class Freshdags(FreshdagsApi):
                         datetime.fromisoformat(date), sha, author=author, subject=subject
                     )
                 elif line and moment:
-                    if line not in last or moment.at > last[line].at:
-                        last[line] = moment
-                    if line not in first or moment.at <= first[line].at:
-                        first[line] = moment
+                    commits.setdefault(line, []).append(moment)
+        for touching in commits.values():
+            touching.sort(key=lambda m: m.at, reverse=True)
         any_saves = watches_saves(settings.auto_flag) or watches_saves(settings.auto_resolve)
         saved = self._saved(paths, saved_at) if rev is None and any_saves else {}
-        return History(last=last, first=first, saved=saved)
+        return History(tip=tip, commits=commits, saved=saved)
 
     def _saved(self, paths: list[str], at: datetime | None) -> dict[str, Moment]:
         """Uncommitted changes to tracked files among `paths`, staged or not.
@@ -340,42 +476,44 @@ class Freshdags(FreshdagsApi):
                 saved[path] = Moment(at or datetime.fromtimestamp(file.stat().st_mtime, UTC))
         return saved
 
-    def _is_newer(self, changed: Moment, fresh: Moment | None) -> bool:
-        """Whether `changed` happened after `fresh`.
+    def _not_seen_from(
+        self, seen: frozenset[str], candidates: set[str], tip: str | None, *, paths: list[str]
+    ) -> set[str]:
+        """Those of `candidates`, commits in the tip's history touching `paths`, that are not
+        among `seen` or the commits `seen` descend from.
 
-        git dates have one-second resolution, so commits made within the same second tie.
-        Then the history decides: a commit that descends from the other is the newer one.
+        One walk from the tip that stops at `seen`, so its length is the number of commits
+        made since the doc was last brought up to date, not the length of the history.
         """
-        if fresh is None or changed.at != fresh.at:
-            return fresh is None or changed.at > fresh.at
-        if changed.commit is None or fresh.commit is None or changed.commit == fresh.commit:
-            return False
+        if not candidates or not seen or tip is None:
+            return candidates
+        revisions = [tip, *(f"^{commit}" for commit in sorted(seen)), "--", *paths]
+        walked = self.git.run(
+            "--literal-pathspecs", "rev-list", "--stdin", input="\n".join(revisions) + "\n"
+        )
+        return candidates & set(walked.split())
+
+    def _existing_commits(self, shas: list[str]) -> set[str]:
+        """Those of `shas` that are commits in this repository."""
+        if not shas:
+            return set()
+        out = self.git.run(
+            "cat-file", "--batch-check=%(objectname) %(objecttype)", input="\n".join(shas) + "\n"
+        )
+        return {
+            sha
+            for sha, line in zip(shas, out.splitlines(), strict=True)
+            if line.endswith(" commit")
+        }
+
+    def _committed_content(self, path: str, tip: str | None) -> str | None:
+        """Git blob hash of `path` at the tip; None if it does not exist there."""
+        if tip is None:
+            return None
         try:
-            self.git.run("merge-base", "--is-ancestor", fresh.commit, changed.commit)
+            return self.git.run("rev-parse", "--verify", "--quiet", f"{tip}:{path}")
         except GitError:
-            return False
-        return True
-
-    def _was_reviewed(self, doc: Node, source: str, changed: Moment, rev: str | None) -> bool:
-        """Whether the doc's last resolve reviewed exactly the content `changed` produced.
-
-        A resolve records the content it reviewed. Committing that content later makes the
-        change newer than the resolve, but it is the same content, so it needs no review.
-        A flag changes no content, so it is never covered.
-        """
-        reviewed = doc.resolved.sources.get(source) if doc.resolved else None
-        if reviewed is None or changed.flagged:
-            return False
-        if changed.commit is None:  # an uncommitted save
-            current = self._working_hashes([source]).get(source)
-        else:
-            try:
-                current = self.git.run(
-                    "rev-parse", "--verify", "--quiet", f"{rev or 'HEAD'}:{source}"
-                )
-            except GitError:
-                current = None
-        return current == reviewed
+            return None
 
     def _working_hashes(self, paths: list[str]) -> dict[str, str]:
         """Git blob hash of each existing file among `paths`, as in the working tree.

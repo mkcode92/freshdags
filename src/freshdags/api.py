@@ -81,7 +81,15 @@ class FreshdagsApi(ABC):
 
     @abstractmethod
     def check(self, rev: str | None = None, *, uncommitted: bool = False) -> CheckReport:
-        """Find every doc that is older than one of its sources.
+        """Find every doc with a source change it has not reviewed.
+
+        A doc reviews a change by being created, updated (as `auto-resolve` allows) or
+        resolved after it:
+        - A commit counts as reviewed when the doc has seen it: a commit of the doc, or the
+          commit a resolve was made on, descends from it. Ancestry, not dates, so rebases and
+          merges cannot reorder a change and a doc update.
+        - Saves and flags have no place in the history, so they are ordered by time.
+        - Any change that leaves a source exactly as a resolve reviewed it is reviewed.
 
         Without `rev`, uses the current freshdags.json and, in `on-change` mode, the working
         tree. With `rev`, uses freshdags.json and the history as of that commit only.
